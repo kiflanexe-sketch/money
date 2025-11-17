@@ -1,0 +1,1092 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Finance Predictor</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Icons (Ionicons) -->
+    <script type="module" src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.esm.js"></script>
+    <script nomodule src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.js"></script>
+    <style>
+        /* Use Inter font */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        ::placeholder {
+            color: #9ca3af;
+            opacity: 1;
+        }
+        /* Style for hidden cancel buttons */
+        .cancel-btn {
+            display: none;
+        }
+        /* Custom styles for selisih */
+        .selisih-positif { color: #16a34a; /* green-600 */ }
+        .selisih-negatif { color: #dc2626; /* red-600 */ }
+        .selisih-netral { color: #6b7280; /* gray-500 */ }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <!-- Modal for Firebase Config -->
+    <div id="firebaseConfigModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4 hidden">
+        <div class="bg-white p-6 rounded-xl shadow-2xl max-w-lg w-full">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">Firebase Configuration Required</h2>
+            <p class="text-gray-600 mb-4">Please paste your Firebase config JSON here to connect to your database. You only need to do this once.</p>
+            <p class="text-xs text-gray-500 mb-2">You can get this from your Firebase project settings (see the deploy tutorial).</p>
+            <div>
+                <label for="firebaseConfigInput" class="block text-sm font-medium text-gray-700 mb-1">Firebase Config JSON</label>
+                <textarea id="firebaseConfigInput" rows="10" placeholder='{ "apiKey": "...", "authDomain": "...", ... }' class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 font-mono text-xs"></textarea>
+                <p id="configError" class="text-red-500 text-sm mt-1 hidden"></p>
+            </div>
+            <div class="mt-4">
+                <button id="saveConfigBtn" class="w-full bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-blue-700 transition duration-300">
+                    Save and Reload
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for Logging Actual Income -->
+    <div id="actualIncomeModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4 hidden">
+        <div class="bg-white p-6 rounded-xl shadow-2xl max-w-lg w-full">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">Log Actual Income</h2>
+            <p class="text-gray-600 mb-4">How much did you actually receive for <strong id="actualIncomeItemName">...</strong>?</p>
+            <input type="hidden" id="actualIncomeItemId">
+            <div>
+                <label for="actualIncomeAmount" class="block text-sm font-medium text-gray-700 mb-1">Actual Amount Received (IDR)</label>
+                <input type="number" id="actualIncomeAmount" placeholder="e.g., 5000000" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            <div class="flex space-x-2 mt-4">
+                <button id="saveActualIncomeBtn" class="w-full bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-blue-700 transition duration-300">
+                    Save Actual
+                </button>
+                <button id="closeActualIncomeModalBtn" class="w-1/3 bg-gray-400 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-gray-500 transition duration-300">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container mx-auto max-w-md p-4 min-h-screen bg-gray-100">
+        
+        <!-- Header -->
+        <header class="text-center mb-6">
+            <h1 class="text-3xl font-bold text-blue-700">Finance Predictor</h1>
+            <p class="text-gray-600">Track your budget vs. actual spending.</p>
+        </header>
+
+        <!-- Loading Indicator -->
+        <div id="loading" class="text-center p-4">
+            <p class="text-gray-500">Loading data...</p>
+        </div>
+
+        <!-- App Content (Hidden until auth is ready) -->
+        <main id="app-content" class="hidden space-y-6">
+
+            <!-- 1. Manage Income -->
+            <section class="bg-white p-5 rounded-xl shadow-lg">
+                <h2 class="text-xl font-semibold mb-4 text-gray-800 border-b pb-2">1. Manage Income (Budget)</h2>
+                <div class="space-y-4">
+                    <input type="hidden" id="editingIncomeId">
+                    <div>
+                        <label for="incomeItemName" class="block text-sm font-medium text-gray-700 mb-1">Income Source</label>
+                        <input type="text" id="incomeItemName" placeholder="e.g., Salary, Side Hustle" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label for="incomeItemAmount" class="block text-sm font-medium text-gray-700 mb-1">Budgeted Amount (IDR)</label>
+                        <input type="number" id="incomeItemAmount" placeholder="e.g., 5000000" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div class="flex space-x-2">
+                        <button id="addIncomeItemBtn" class="w-full bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-blue-700 transition duration-300">
+                            Add Income
+                        </button>
+                        <button id="cancelEditIncomeBtn" class="cancel-btn w-1/3 bg-gray-400 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-gray-500 transition duration-300">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+                <!-- Income List -->
+                <div id="incomeItemList" class="space-y-3 mt-4 max-h-48 overflow-y-auto">
+                    <!-- List filled by JavaScript -->
+                </div>
+                <!-- Income Totals -->
+                <div class="mt-4 pt-4 border-t space-y-2">
+                    <div class="flex justify-between items-center">
+                        <span class="font-medium text-gray-600">Total Budgeted Income:</span>
+                        <span id="totalBudgetIncome" class="font-bold text-gray-800">Rp 0</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="font-medium text-gray-600">Total Actual Income:</span>
+                        <span id="totalActualIncome" class="font-bold text-gray-800">Rp 0</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="font-medium text-gray-600">Selisih (Actual - Budget):</span>
+                        <span id="totalIncomeSelisih" class="font-bold">Rp 0 (0%)</span>
+                    </div>
+                </div>
+                <button id="deleteAllIncomeBtn" class="w-full text-sm text-red-500 hover:text-red-700 mt-2">Delete All Income Items</button>
+            </section>
+            
+            <!-- 2. Manage Expense Budgets -->
+            <section class="bg-white p-5 rounded-xl shadow-lg">
+                <h2 class="text-xl font-semibold mb-4 text-gray-800 border-b pb-2">2. Manage Expense Budgets</h2>
+                <p class="text-xs text-gray-500 mb-3">Add budget categories (e.g., Food, Transport, Bills).</p>
+                <div class="space-y-4">
+                    <input type="hidden" id="editingFixedId">
+                    <div>
+                        <label for="fixedItemName" class="block text-sm font-medium text-gray-700 mb-1">Budget Category Name</label>
+                        <input type="text" id="fixedItemName" placeholder="e.g., Food, Transport, Subscriptions" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label for="fixedItemAmount" class="block text-sm font-medium text-gray-700 mb-1">Budgeted Amount (IDR)</label>
+                        <input type="number" id="fixedItemAmount" placeholder="e.g., 600000" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div class="flex space-x-2">
+                        <button id="addFixedItemBtn" class="w-full bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-blue-700 transition duration-300">
+                            Add Budget Category
+                        </button>
+                         <button id="cancelEditFixedBtn" class="cancel-btn w-1/3 bg-gray-400 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-gray-500 transition duration-300">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+                <!-- Expense Budget List -->
+                <div id="fixedSpendingList" class="space-y-3 mt-4 max-h-48 overflow-y-auto">
+                    <!-- List filled by JavaScript -->
+                </div>
+                <!-- Expense Totals -->
+                <div class="mt-4 pt-4 border-t space-y-2">
+                    <div class="flex justify-between items-center">
+                        <span class="font-medium text-gray-600">Total Budgeted Expense:</span>
+                        <span id="totalBudgetExpense" class="font-bold text-gray-800">Rp 0</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="font-medium text-gray-600">Total Actual Expense:</span>
+                        <span id="totalActualExpense" class="font-bold text-gray-800">Rp 0</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="font-medium text-gray-600">Selisih (Budget - Actual):</span>
+                        <span id="totalExpenseSelisih" class="font-bold">Rp 0 (0%)</span>
+                    </div>
+                </div>
+                <button id="deleteAllFixedBtn" class="w-full text-sm text-red-500 hover:text-red-700 mt-2">Delete All Budget Categories</button>
+            </section>
+
+            <!-- 3. Financial Dashboard (NEW) -->
+            <section class="bg-white p-5 rounded-xl shadow-lg">
+                <h2 class="text-xl font-semibold mb-4 text-gray-800 border-b pb-2">3. Financial Dashboard</h2>
+                <div class="space-y-4">
+                    <!-- Budgeted View -->
+                    <div>
+                        <h3 class="font-semibold text-gray-700">Budgeted View (Plan)</h3>
+                        <div class="flex justify-between items-center p-2 bg-gray-50 rounded-lg">
+                            <span class="text-gray-600">Budgeted Surplus:</span>
+                            <span id="budgetedSurplus" class="font-bold text-lg text-gray-800">Rp 0</span>
+                        </div>
+                        <p class="text-xs text-gray-500">(Total Budget Income - Total Budget Expense)</p>
+                    </div>
+                    <!-- Actual View -->
+                    <div>
+                        <h3 class="font-semibold text-gray-700">Actual View (To-Date)</h3>
+                        <div class="flex justify-between items-center p-2 bg-gray-50 rounded-lg">
+                            <span class="text-gray-600">Actual Surplus (Cash on Hand):</span>
+                            <span id="actualSurplus" class="font-bold text-2xl text-blue-600">Rp 0</span>
+                        </div>
+                         <p class="text-xs text-gray-500">(Total Actual Income - Total Actual Expense)</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 4. Expense Predictor -->
+            <section class="bg-white p-5 rounded-xl shadow-lg">
+                <h2 class="text-xl font-semibold mb-4 text-gray-800 border-b pb-2">4. Expense Predictor</h2>
+                
+                <!-- Prediction Type -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Predict based on:</label>
+                    <div class="flex space-x-4">
+                        <label class="flex items-center">
+                            <input type="radio" name="predictionType" value="budget" class="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300" checked>
+                            <span class="ml-2 text-gray-700">Remaining Budget</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="radio" name="predictionType" value="actual" class="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300">
+                            <span class="ml-2 text-gray-700">Actual Funds</span>
+                        </label>
+                    </div>
+                    <p id="predictionHelpText" class="text-xs text-gray-500 mt-1">Based on your planned 'Budgeted Surplus'.</p>
+                </div>
+                
+                <div>
+                    <label for="newExpenseAmount" class="block text-sm font-medium text-gray-700 mb-1">New Purchase Amount</label>
+                    <input type="number" id="newExpenseAmount" placeholder="e.g., 250000" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div class="flex space-x-2 mt-4">
+                     <button id="checkPredictionBtn" class="w-full bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-indigo-700 transition duration-300">
+                        Check Prediction
+                    </button>
+                    <button id="clearPredictionBtn" class="w-1/3 bg-gray-400 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-gray-500 transition duration-300">
+                        Clear
+                    </button>
+                </div>
+                <!-- Prediction Result -->
+                <div id="predictionResult" class="mt-4 p-4 rounded-lg text-center font-medium hidden">
+                    <!-- Content filled by JavaScript -->
+                </div>
+            </section>
+
+            <!-- 5. Log Actual Expense -->
+            <section class="bg-white p-5 rounded-xl shadow-lg">
+                <h2 class="text-xl font-semibold mb-4 text-gray-800 border-b pb-2">5. Log Actual Expense</h2>
+                <p class="text-sm text-gray-600 mb-4">Log your daily spending against your budget categories.</p>
+                <div class="space-y-4">
+                    <input type="hidden" id="editingDynamicId">
+                    <div>
+                        <label for="expenseCategorySelect" class="block text-sm font-medium text-gray-700 mb-1">Expense Category</label>
+                        <select id="expenseCategorySelect" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                            <option value="">-- Select Category --</option>
+                            <!-- Options filled by JavaScript -->
+                            <option value="other">Other (Unbudgeted)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="newDynamicExpenseName" class="block text-sm font-medium text-gray-700 mb-1">Expense Name</label>
+                        <input type="text" id="newDynamicExpenseName" placeholder="e.g., Lunch, Coffee, Bus Fare" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label for="newDynamicExpenseAmount" class="block text-sm font-medium text-gray-700 mb-1">Amount (IDR)</label>
+                        <input type="number" id="newDynamicExpenseAmount" placeholder="e.g., 50000" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                     <div class="flex space-x-2">
+                        <button id="addDynamicExpenseBtn" class="w-full bg-green-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-green-700 transition duration-300">
+                            Log Expense
+                        </button>
+                         <button id="cancelEditDynamicBtn" class="cancel-btn w-1/3 bg-gray-400 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-gray-500 transition duration-300">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 6. Expense Log History -->
+            <section class="bg-white p-5 rounded-xl shadow-lg">
+                <div class="flex justify-between items-center mb-4 border-b pb-2">
+                    <h2 class="text-xl font-semibold text-gray-800">6. Expense Log History</h2>
+                    <button id="deleteAllDynamicBtn" class="text-sm text-red-500 hover:text-red-700">Delete All</button>
+                </div>
+                <div id="dynamicExpenseList" class="space-y-3 max-h-60 overflow-y-auto">
+                    <!-- List filled by JavaScript -->
+                    <p id="emptyListMessage" class="text-gray-500 text-center">No expenses logged yet.</p>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        // Import Firebase functions
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, updateDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Firebase Config (Deployable Mode) ---
+        let firebaseConfig = {};
+        const appId = 'default-app-id'; // This is less critical now, but kept for path structure
+        
+        // --- App Initialization ---
+        let app, auth, db, userId, docRef, isAuthReady = false;
+        let unsubscribeSnapshot = null;
+        let daysInMonth, remainingDays;
+
+        // --- App State ---
+        const state = {
+            incomeItems: [], // { id, name, amount (budget), actual }
+            expenseBudgets: [], // { id, name, amount (budget), actual }
+            expenseLog: [], // { id, categoryId, name, amount, date }
+            editingIncomeId: null,
+            editingFixedId: null,
+            editingDynamicId: null,
+            // Derived state
+            totalBudgetIncome: 0,
+            totalActualIncome: 0,
+            totalBudgetExpense: 0,
+            totalActualExpense: 0,
+            budgetedSurplus: 0,
+            actualSurplus: 0,
+        };
+
+        // --- DOM Elements ---
+        const ui = {
+            loading: document.getElementById('loading'),
+            appContent: document.getElementById('app-content'),
+
+            // Firebase Config Modal
+            firebaseConfigModal: document.getElementById('firebaseConfigModal'),
+            firebaseConfigInput: document.getElementById('firebaseConfigInput'),
+            configError: document.getElementById('configError'),
+            saveConfigBtn: document.getElementById('saveConfigBtn'),
+            
+            // Actual Income Modal
+            actualIncomeModal: document.getElementById('actualIncomeModal'),
+            actualIncomeItemName: document.getElementById('actualIncomeItemName'),
+            actualIncomeItemId: document.getElementById('actualIncomeItemId'),
+            actualIncomeAmount: document.getElementById('actualIncomeAmount'),
+            saveActualIncomeBtn: document.getElementById('saveActualIncomeBtn'),
+            closeActualIncomeModalBtn: document.getElementById('closeActualIncomeModalBtn'),
+
+            // Income
+            incomeItemName: document.getElementById('incomeItemName'),
+            incomeItemAmount: document.getElementById('incomeItemAmount'),
+            addIncomeItemBtn: document.getElementById('addIncomeItemBtn'),
+            cancelEditIncomeBtn: document.getElementById('cancelEditIncomeBtn'),
+            editingIncomeId: document.getElementById('editingIncomeId'),
+            incomeItemList: document.getElementById('incomeItemList'),
+            totalBudgetIncome: document.getElementById('totalBudgetIncome'),
+            totalActualIncome: document.getElementById('totalActualIncome'),
+            totalIncomeSelisih: document.getElementById('totalIncomeSelisih'),
+            deleteAllIncomeBtn: document.getElementById('deleteAllIncomeBtn'),
+
+            // Fixed Spending (Expense Budgets)
+            fixedItemName: document.getElementById('fixedItemName'),
+            fixedItemAmount: document.getElementById('fixedItemAmount'),
+            addFixedItemBtn: document.getElementById('addFixedItemBtn'),
+            cancelEditFixedBtn: document.getElementById('cancelEditFixedBtn'),
+            editingFixedId: document.getElementById('editingFixedId'),
+            fixedSpendingList: document.getElementById('fixedSpendingList'),
+            totalBudgetExpense: document.getElementById('totalBudgetExpense'),
+            totalActualExpense: document.getElementById('totalActualExpense'),
+            totalExpenseSelisih: document.getElementById('totalExpenseSelisih'),
+            deleteAllFixedBtn: document.getElementById('deleteAllFixedBtn'),
+
+            // Dashboard
+            budgetedSurplus: document.getElementById('budgetedSurplus'),
+            actualSurplus: document.getElementById('actualSurplus'),
+
+            // Predictor
+            predictionType: document.querySelectorAll('input[name="predictionType"]'),
+            predictionHelpText: document.getElementById('predictionHelpText'),
+            newExpenseAmount: document.getElementById('newExpenseAmount'),
+            checkPredictionBtn: document.getElementById('checkPredictionBtn'),
+            clearPredictionBtn: document.getElementById('clearPredictionBtn'),
+            predictionResult: document.getElementById('predictionResult'),
+
+            // Dynamic Expense (Expense Log)
+            expenseCategorySelect: document.getElementById('expenseCategorySelect'),
+            newDynamicExpenseName: document.getElementById('newDynamicExpenseName'),
+            newDynamicExpenseAmount: document.getElementById('newDynamicExpenseAmount'),
+            addDynamicExpenseBtn: document.getElementById('addDynamicExpenseBtn'),
+            cancelEditDynamicBtn: document.getElementById('cancelEditDynamicBtn'),
+            editingDynamicId: document.getElementById('editingDynamicId'),
+            dynamicExpenseList: document.getElementById('dynamicExpenseList'),
+            deleteAllDynamicBtn: document.getElementById('deleteAllDynamicBtn')
+        };
+
+        // --- Helper Functions ---
+
+        function formatCurrency(value) {
+            if (isNaN(value)) value = 0;
+            return new Intl.NumberFormat('id-ID', { 
+                style: 'currency', 
+                currency: 'IDR', 
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            }).format(value);
+        }
+
+        function formatSelisih(actual, budget, type = 'expense') {
+            let selisih = (type === 'expense') ? (budget - actual) : (actual - budget);
+            let percent = (budget === 0) ? 0 : (selisih / budget) * 100;
+            
+            let colorClass = 'selisih-netral';
+            if (selisih > 0) colorClass = 'selisih-positif';
+            if (selisih < 0) colorClass = 'selisih-negatif';
+
+            return `<span class="${colorClass}">${formatCurrency(selisih)} (${percent.toFixed(0)}%)</span>`;
+        }
+        
+        function updateDateInfo() {
+            const today = new Date();
+            daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+            remainingDays = daysInMonth - today.getDate() + 1;
+            console.log(`Days in month: ${daysInMonth}, Remaining days: ${remainingDays}`);
+        }
+
+        // --- Main App Functions ---
+
+        async function init() {
+            try {
+                // --- Config Check (Deployable Mode) ---
+                const savedConfig = localStorage.getItem('firebaseConfig');
+                if (!savedConfig) {
+                    ui.loading.classList.add('hidden');
+                    ui.firebaseConfigModal.classList.remove('hidden');
+                    ui.saveConfigBtn.addEventListener('click', saveConfig);
+                    return; // Stop init, wait for user input
+                }
+                
+                try {
+                    firebaseConfig = JSON.parse(savedConfig);
+                } catch (e) {
+                    localStorage.removeItem('firebaseConfig'); // Remove bad config
+                    ui.loading.textContent = "Error: Invalid config. Reloading.";
+                    location.reload();
+                    return;
+                }
+                
+                // --- End Config Check ---
+
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                setLogLevel('Debug');
+                
+                updateDateInfo();
+
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        console.log("User authenticated (anon):", user.uid);
+                        userId = user.uid;
+                        isAuthReady = true;
+                        await loadData();
+                    } else {
+                        console.log("No user signed in, attempting anonymous sign-in...");
+                        try {
+                            // Only use signInAnonymously for deployable version
+                            await signInAnonymously(auth);
+                        } catch (authError) {
+                            console.error("Error signing in anonymously:", authError);
+                            if (authError.code === 'auth/operation-not-allowed') {
+                                ui.loading.textContent = "Error: Anonymous sign-in not enabled in your Firebase project.";
+                            } else {
+                                ui.loading.textContent = "Error: Failed to authenticate.";
+                            }
+                        }
+                    }
+                });
+
+                addEventListeners();
+
+            } catch (error) {
+                console.error("Error initializing Firebase:", error);
+                // Check for common firebase init errors
+                if (error.message.includes("Missing or invalid 'authDomain'")) {
+                     ui.loading.innerHTML = `Error: Invalid Firebase config.<br>Please clear local storage and reload.`;
+                     localStorage.removeItem('firebaseConfig');
+                } else {
+                    ui.loading.textContent = "Error: Failed to load app.";
+                }
+            }
+        }
+        
+        function saveConfig() {
+            const configString = ui.firebaseConfigInput.value;
+            try {
+                // Test parsing
+                JSON.parse(configString);
+                
+                // Save and reload
+                localStorage.setItem('firebaseConfig', configString);
+                ui.firebaseConfigModal.classList.remove('hidden');
+                ui.loading.classList.remove('hidden');
+                ui.loading.textContent = "Config saved. Reloading...";
+                location.reload();
+                
+            } catch (e) {
+                ui.configError.textContent = "Invalid JSON. Please paste the exact config object.";
+                ui.configError.classList.remove('hidden');
+            }
+        }
+
+        function addEventListeners() {
+            // Manage Income
+            ui.addIncomeItemBtn.addEventListener('click', manageIncomeItem);
+            ui.deleteAllIncomeBtn.addEventListener('click', () => deleteAllItems('incomeItems'));
+            ui.cancelEditIncomeBtn.addEventListener('click', () => cancelEdit('income'));
+            ui.incomeItemList.addEventListener('click', (e) => handleListClick(e, 'income'));
+
+            // Manage Expense Budgets
+            ui.addFixedItemBtn.addEventListener('click', manageExpenseBudget);
+            ui.deleteAllFixedBtn.addEventListener('click', () => deleteAllItems('expenseBudgets'));
+            ui.cancelEditFixedBtn.addEventListener('click', () => cancelEdit('fixed'));
+            ui.fixedSpendingList.addEventListener('click', (e) => handleListClick(e, 'fixed'));
+            
+            // Predictor
+            ui.checkPredictionBtn.addEventListener('click', checkPrediction);
+            ui.clearPredictionBtn.addEventListener('click', clearPrediction);
+            ui.predictionType.forEach(radio => radio.addEventListener('change', updatePredictionHelpText));
+
+            // Log Expense
+            ui.addDynamicExpenseBtn.addEventListener('click', manageExpenseLog);
+            ui.deleteAllDynamicBtn.addEventListener('click', () => deleteAllItems('expenseLog'));
+            ui.cancelEditDynamicBtn.addEventListener('click', () => cancelEdit('dynamic'));
+            ui.dynamicExpenseList.addEventListener('click', (e) => handleListClick(e, 'dynamic'));
+
+            // Actual Income Modal
+            ui.saveActualIncomeBtn.addEventListener('click', saveActualIncome);
+            ui.closeActualIncomeModalBtn.addEventListener('click', () => ui.actualIncomeModal.classList.add('hidden'));
+        }
+
+        function handleListClick(e, type) {
+            const deleteBtn = e.target.closest('.delete-btn');
+            const editBtn = e.target.closest('.edit-btn');
+            const logActualBtn = e.target.closest('.log-actual-btn');
+            
+            if (deleteBtn) {
+                const id = deleteBtn.dataset.id;
+                if (type === 'dynamic') type = 'expenseLog'; // Remap type
+                deleteItem(type, id);
+            } else if (editBtn) {
+                const id = editBtn.dataset.id;
+                if (type === 'dynamic') type = 'expenseLog'; // Remap type
+                startEdit(type, id);
+            } else if (logActualBtn) {
+                const id = logActualBtn.dataset.id;
+                openActualIncomeModal(id);
+            }
+        }
+
+        async function loadData() {
+            if (!isAuthReady || !userId) {
+                console.warn("loadData called before auth is ready.");
+                return;
+            }
+
+            if (unsubscribeSnapshot) unsubscribeSnapshot();
+
+            const docId = new Date().toISOString().slice(0, 7); // "YYYY-MM"
+            // Use generic 'appId' for path, as user provides their own config
+            const collectionPath = `artifacts/${appId}/users/${userId}/monthlyFinance`;
+            docRef = doc(db, collectionPath, docId);
+            console.log(`Listening to doc: ${collectionPath}/${docId}`);
+
+            ui.loading.classList.add('hidden');
+            ui.appContent.classList.remove('hidden');
+
+            unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    console.log("Data loaded:", docSnap.data());
+                    const data = docSnap.data();
+                    state.incomeItems = data.incomeItems || [];
+                    // Migration: old `fixedSpendingItems` becomes `expenseBudgets`
+                    state.expenseBudgets = data.expenseBudgets || data.fixedSpendingItems || []; 
+                    // Migration: old `dynamicExpenses` becomes `expenseLog`
+                    state.expenseLog = data.expenseLog || data.dynamicExpenses || []; 
+                } else {
+                    console.log("No such document! Initializing state.");
+                    state.incomeItems = [];
+                    state.expenseBudgets = [];
+                    state.expenseLog = [];
+                }
+                // Recalculate actuals from log
+                recalculateBudgetActuals();
+                updateUI();
+            }, (error) => {
+                console.error("Error listening to document:", error);
+            });
+        }
+        
+        /**
+         * Recalculates all 'actual' fields in expenseBudgets based on the expenseLog.
+         * This is crucial for data integrity.
+         */
+        function recalculateBudgetActuals() {
+            state.expenseBudgets.forEach(item => {
+                item.actual = state.expenseLog
+                    .filter(log => log.categoryId === item.id)
+                    .reduce((sum, log) => sum + (log.amount || 0), 0);
+            });
+        }
+
+        function updateUI() {
+            // 1. Recalculate all totals from state
+            state.totalBudgetIncome = state.incomeItems.reduce((sum, item) => sum + (item.amount || 0), 0);
+            state.totalActualIncome = state.incomeItems.reduce((sum, item) => sum + (item.actual || 0), 0);
+            
+            recalculateBudgetActuals(); // Ensure budget actuals are fresh
+            state.totalBudgetExpense = state.expenseBudgets.reduce((sum, item) => sum + (item.amount || 0), 0);
+            state.totalActualExpense = state.expenseLog.reduce((sum, log) => sum + (log.amount || 0), 0);
+            
+            state.budgetedSurplus = state.totalBudgetIncome - state.totalBudgetExpense;
+            state.actualSurplus = state.totalActualIncome - state.totalActualExpense;
+
+            // 2. Update DOM - Income
+            ui.totalBudgetIncome.textContent = formatCurrency(state.totalBudgetIncome);
+            ui.totalActualIncome.textContent = formatCurrency(state.totalActualIncome);
+            ui.totalIncomeSelisih.innerHTML = formatSelisih(state.totalActualIncome, state.totalBudgetIncome, 'income');
+            renderIncomeList(ui.incomeItemList, state.incomeItems);
+
+            // 3. Update DOM - Expense Budgets
+            ui.totalBudgetExpense.textContent = formatCurrency(state.totalBudgetExpense);
+            ui.totalActualExpense.textContent = formatCurrency(state.totalActualExpense);
+            ui.totalExpenseSelisih.innerHTML = formatSelisih(state.totalActualExpense, state.totalBudgetExpense, 'expense');
+            renderBudgetList(ui.fixedSpendingList, state.expenseBudgets);
+            
+            // 4. Update DOM - Dashboard
+            ui.budgetedSurplus.textContent = formatCurrency(state.budgetedSurplus);
+            ui.actualSurplus.textContent = formatCurrency(state.actualSurplus);
+            if (state.actualSurplus < 0) {
+                ui.actualSurplus.classList.remove('text-blue-600');
+                ui.actualSurplus.classList.add('text-red-600');
+            } else {
+                ui.actualSurplus.classList.remove('text-red-600');
+                ui.actualSurplus.classList.add('text-blue-600');
+            }
+
+            // 5. Update DOM - Expense Log
+            renderExpenseLog(ui.dynamicExpenseList, state.expenseLog, 'No expenses logged yet.');
+            
+            // 6. Update DOM - Category Dropdown
+            populateCategoryDropdown();
+            
+            // 7. Update Prediction Help Text
+            updatePredictionHelpText();
+        }
+
+        function renderIncomeList(listElement, items) {
+            listElement.innerHTML = ''; // Clear list
+            if (items.length === 0) {
+                listElement.innerHTML = `<p class="text-gray-500 text-center">No income sources added yet.</p>`;
+                return;
+            }
+            items.forEach(item => {
+                const li = document.createElement('li');
+                li.className = 'p-3 bg-gray-50 rounded-lg shadow-sm';
+                li.innerHTML = `
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="font-medium text-gray-800">${item.name}</span>
+                        <div class="flex space-x-2">
+                            <button data-id="${item.id}" class="edit-btn text-blue-500 hover:text-blue-700 p-1 rounded-full">
+                                <ion-icon name="create-outline" class="text-xl pointer-events-none"></ion-icon>
+                            </button>
+                            <button data-id="${item.id}" class="delete-btn text-red-500 hover:text-red-700 p-1 rounded-full">
+                                <ion-icon name="trash-outline" class="text-xl pointer-events-none"></ion-icon>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="text-sm space-y-1">
+                        <div class="flex justify-between">
+                            <span>Budget:</span>
+                            <span>${formatCurrency(item.amount)}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Actual:</span>
+                            <span class="flex items-center">
+                                ${formatCurrency(item.actual || 0)}
+                                <button data-id="${item.id}" class="log-actual-btn text-blue-500 hover:text-blue-700 p-1 ml-1">
+                                    <ion-icon name="pencil-outline" class="text-lg pointer-events-none"></ion-icon>
+                                </button>
+                            </span>
+                        </div>
+                        <div class="flex justify-between font-medium">
+                            <span>Selisih:</span>
+                            ${formatSelisih(item.actual || 0, item.amount, 'income')}
+                        </div>
+                    </div>
+                `;
+                listElement.appendChild(li);
+            });
+        }
+        
+        function renderBudgetList(listElement, items) {
+            listElement.innerHTML = ''; // Clear list
+            if (items.length === 0) {
+                listElement.innerHTML = `<p class="text-gray-500 text-center">No budget categories added yet.</p>`;
+                return;
+            }
+            items.forEach(item => {
+                const li = document.createElement('li');
+                li.className = 'p-3 bg-gray-50 rounded-lg shadow-sm';
+                
+                const remainingBudget = (item.amount || 0) - (item.actual || 0);
+                const dailyAdvice = (remainingDays > 0) ? (remainingBudget / remainingDays) : 0;
+                
+                li.innerHTML = `
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="font-medium text-gray-800">${item.name}</span>
+                        <div class="flex space-x-2">
+                            <button data-id="${item.id}" class="edit-btn text-blue-500 hover:text-blue-700 p-1 rounded-full">
+                                <ion-icon name="create-outline" class="text-xl pointer-events-none"></ion-icon>
+                            </button>
+                            <button data-id="${item.id}" class="delete-btn text-red-500 hover:text-red-700 p-1 rounded-full">
+                                <ion-icon name="trash-outline" class="text-xl pointer-events-none"></ion-icon>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="text-sm space-y-1">
+                        <div class="flex justify-between">
+                            <span>Budget:</span>
+                            <span>${formatCurrency(item.amount)}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Actual:</span>
+                            <span>${formatCurrency(item.actual || 0)}</span>
+                        </div>
+                        <div class="flex justify-between font-medium">
+                            <span>Remaining:</span>
+                            ${formatSelisih(item.actual || 0, item.amount, 'expense')}
+                        </div>
+                        <div class="flex justify-between text-xs text-blue-600 pt-1 border-t mt-1">
+                            <span>Daily Advice (Rest of Month):</span>
+                            <span class="font-medium">${formatCurrency(dailyAdvice)} / day</span>
+                        </div>
+                    </div>
+                `;
+                listElement.appendChild(li);
+            });
+        }
+        
+        function renderExpenseLog(listElement, items, emptyMessage) {
+            listElement.innerHTML = ''; // Clear list
+            if (items.length === 0) {
+                listElement.innerHTML = `<p class="text-gray-500 text-center">${emptyMessage}</p>`;
+                return;
+            }
+            
+            const sortedItems = [...items].reverse();
+
+            sortedItems.forEach(item => {
+                const category = state.expenseBudgets.find(c => c.id === item.categoryId);
+                const categoryName = category ? category.name : (item.categoryId === 'other' ? 'Other' : 'Uncategorized');
+                
+                const li = document.createElement('li');
+                li.className = 'flex justify-between items-center p-3 bg-gray-50 rounded-lg shadow-sm';
+                li.innerHTML = `
+                    <div>
+                        <span class="font-medium text-gray-800">${item.name}</span>
+                        <span class="block text-sm text-gray-600">${formatCurrency(item.amount)} <span class="text-xs text-gray-400">(${categoryName})</span></span>
+                    </div>
+                    <div class="flex space-x-2">
+                        <button data-id="${item.id}" class="edit-btn text-blue-500 hover:text-blue-700 p-1 rounded-full">
+                            <ion-icon name="create-outline" class="text-xl pointer-events-none"></ion-icon>
+                        </button>
+                        <button data-id="${item.id}" class="delete-btn text-red-500 hover:text-red-700 p-1 rounded-full">
+                            <ion-icon name="trash-outline" class="text-xl pointer-events-none"></ion-icon>
+                        </button>
+                    </div>
+                `;
+                listElement.appendChild(li);
+            });
+        }
+        
+        function populateCategoryDropdown() {
+            ui.expenseCategorySelect.innerHTML = '<option value="">-- Select Category --</option>';
+            state.expenseBudgets.forEach(cat => {
+                const option = document.createElement('option');
+                option.value = cat.id;
+                option.textContent = cat.name;
+                ui.expenseCategorySelect.appendChild(option);
+            });
+            ui.expenseCategorySelect.innerHTML += '<option value="other">Other (Unbudgeted)</option>';
+        }
+
+        async function saveData(dataToSave) {
+            if (!docRef) {
+                console.error("docRef is not initialized. Cannot save.");
+                return;
+            }
+            try {
+                // Ensure all parts of the state are saved
+                const fullState = {
+                    incomeItems: state.incomeItems,
+                    expenseBudgets: state.expenseBudgets,
+                    expenseLog: state.expenseLog
+                };
+                await setDoc(docRef, fullState, { merge: false }); // Use false merge to overwrite, cleaner
+                console.log("Data saved:", fullState);
+            } catch (error) {
+                console.error("Error saving data:", error);
+            }
+        }
+
+        // --- Item Management Functions ---
+
+        function manageIncomeItem() {
+            const name = ui.incomeItemName.value.trim();
+            const amount = parseFloat(ui.incomeItemAmount.value);
+            if (!name || isNaN(amount) || amount <= 0) {
+                alert("Please enter a valid name and amount.");
+                return;
+            }
+
+            if (state.editingIncomeId) {
+                // Edit existing
+                state.incomeItems = state.incomeItems.map(item => 
+                    item.id === state.editingIncomeId ? { ...item, name, amount } : item
+                );
+            } else {
+                // Add new
+                const newItem = { id: crypto.randomUUID(), name, amount, actual: 0 };
+                state.incomeItems.push(newItem);
+            }
+            
+            saveData();
+            cancelEdit('income');
+        }
+        
+        function openActualIncomeModal(id) {
+            const item = state.incomeItems.find(i => i.id === id);
+            if (!item) return;
+            
+            ui.actualIncomeItemId.value = id;
+            ui.actualIncomeItemName.textContent = item.name;
+            ui.actualIncomeAmount.value = item.actual || '';
+            ui.actualIncomeModal.classList.remove('hidden');
+            ui.actualIncomeAmount.focus();
+        }
+
+        function saveActualIncome() {
+            const id = ui.actualIncomeItemId.value;
+            const amount = parseFloat(ui.actualIncomeAmount.value);
+            
+            if (isNaN(amount) || amount < 0) {
+                 alert("Please enter a valid actual amount.");
+                return;
+            }
+            
+            const item = state.incomeItems.find(i => i.id === id);
+            if (item) {
+                item.actual = amount;
+                saveData();
+            }
+            ui.actualIncomeModal.classList.add('hidden');
+        }
+
+        function manageExpenseBudget() {
+            const name = ui.fixedItemName.value.trim();
+            const amount = parseFloat(ui.fixedItemAmount.value);
+            if (!name || isNaN(amount) || amount <= 0) {
+                alert("Please enter a valid name and amount.");
+                return;
+            }
+
+            if (state.editingFixedId) {
+                // Edit existing
+                state.expenseBudgets = state.expenseBudgets.map(item => 
+                    item.id === state.editingFixedId ? { ...item, name, amount } : item
+                );
+            } else {
+                // Add new
+                const newItem = { id: crypto.randomUUID(), name, amount, actual: 0 };
+                state.expenseBudgets.push(newItem);
+            }
+            
+            saveData();
+            cancelEdit('fixed');
+        }
+
+        function manageExpenseLog() {
+            const categoryId = ui.expenseCategorySelect.value;
+            const name = ui.newDynamicExpenseName.value.trim();
+            const amount = parseFloat(ui.newDynamicExpenseAmount.value);
+            
+            if (!categoryId) {
+                alert("Please select an expense category.");
+                return;
+            }
+            if (!name || isNaN(amount) || amount <= 0) {
+                alert("Please enter a valid name and amount.");
+                return;
+            }
+
+            if (state.editingDynamicId) {
+                // Edit existing
+                state.expenseLog = state.expenseLog.map(item => 
+                    item.id === state.editingDynamicId ? { ...item, categoryId, name, amount } : item
+                );
+            } else {
+                // Add new
+                const newItem = { id: crypto.randomUUID(), categoryId, name, amount, date: new Date().toISOString() };
+                state.expenseLog.push(newItem);
+            }
+            
+            // Recalculate budget actuals and save
+            recalculateBudgetActuals();
+            saveData();
+            cancelEdit('dynamic');
+        }
+
+        function deleteItem(type, id) {
+            let stateArrayKey;
+            if (type === 'income') stateArrayKey = 'incomeItems';
+            else if (type === 'fixed') stateArrayKey = 'expenseBudgets';
+            else if (type === 'expenseLog') stateArrayKey = 'expenseLog';
+            else return;
+
+            state[stateArrayKey] = state[stateArrayKey].filter(item => item.id !== id);
+            
+            // If deleting a log, must recalculate actuals
+            if (type === 'expenseLog') {
+                recalculateBudgetActuals();
+            }
+            
+            saveData();
+        }
+
+        async function deleteAllItems(key) {
+            let stateArrayKey;
+            if (key === 'incomeItems') stateArrayKey = 'incomeItems';
+            else if (key === 'expenseBudgets') stateArrayKey = 'expenseBudgets';
+            else if (key === 'expenseLog') stateArrayKey = 'expenseLog';
+            else return;
+
+            // REMOVED confirm() call which was blocking execution
+            state[stateArrayKey] = [];
+            
+            // If deleting all logs, reset budget actuals
+            if (key === 'expenseLog') {
+                state.expenseBudgets.forEach(item => item.actual = 0);
+            }
+            
+            saveData();
+        }
+
+        function startEdit(type, id) {
+            let stateArray, nameInput, amountInput, editingIdKey, addBtn, cancelBtn, categoryInput;
+
+            if (type === 'income') {
+                stateArray = state.incomeItems;
+                nameInput = ui.incomeItemName;
+                amountInput = ui.incomeItemAmount;
+                editingIdKey = 'editingIncomeId';
+                addBtn = ui.addIncomeItemBtn;
+                cancelBtn = ui.cancelEditIncomeBtn;
+            } else if (type === 'fixed') {
+                stateArray = state.expenseBudgets;
+                nameInput = ui.fixedItemName;
+                amountInput = ui.fixedItemAmount;
+                editingIdKey = 'editingFixedId';
+                addBtn = ui.addFixedItemBtn;
+                cancelBtn = ui.cancelEditFixedBtn;
+            } else { // 'expenseLog'
+                stateArray = state.expenseLog;
+                nameInput = ui.newDynamicExpenseName;
+                amountInput = ui.newDynamicExpenseAmount;
+                categoryInput = ui.expenseCategorySelect;
+                editingIdKey = 'editingDynamicId';
+                addBtn = ui.addDynamicExpenseBtn;
+                cancelBtn = ui.cancelEditDynamicBtn;
+            }
+
+            const item = stateArray.find(item => item.id === id);
+            if (!item) return;
+
+            nameInput.value = item.name;
+            amountInput.value = item.amount;
+            if (categoryInput) categoryInput.value = item.categoryId;
+            
+            state[editingIdKey] = id;
+            addBtn.textContent = 'Save Edit';
+            addBtn.classList.remove('bg-blue-600', 'bg-green-600');
+            addBtn.classList.add('bg-yellow-500', 'hover:bg-yellow-600');
+            cancelBtn.style.display = 'block';
+        }
+
+        function cancelEdit(type) {
+            let nameInput, amountInput, editingIdKey, addBtn, cancelBtn, addText, addColor, categoryInput;
+
+            if (type === 'income') {
+                nameInput = ui.incomeItemName;
+                amountInput = ui.incomeItemAmount;
+                editingIdKey = 'editingIncomeId';
+                addBtn = ui.addIncomeItemBtn;
+                cancelBtn = ui.cancelEditIncomeBtn;
+                addText = 'Add Income';
+                addColor = 'bg-blue-600';
+            } else if (type === 'fixed') {
+                nameInput = ui.fixedItemName;
+                amountInput = ui.fixedItemAmount;
+                editingIdKey = 'editingFixedId';
+                addBtn = ui.addFixedItemBtn;
+                cancelBtn = ui.cancelEditFixedBtn;
+                addText = 'Add Budget Category';
+                addColor = 'bg-blue-600';
+            } else { // 'dynamic'
+                nameInput = ui.newDynamicExpenseName;
+                amountInput = ui.newDynamicExpenseAmount;
+                categoryInput = ui.expenseCategorySelect;
+                editingIdKey = 'editingDynamicId';
+                addBtn = ui.addDynamicExpenseBtn;
+                cancelBtn = ui.cancelEditDynamicBtn;
+                addText = 'Log Expense';
+                addColor = 'bg-green-600';
+            }
+
+            nameInput.value = '';
+            amountInput.value = '';
+            if (categoryInput) categoryInput.value = '';
+            
+            state[editingIdKey] = null;
+            addBtn.textContent = addText;
+            addBtn.classList.remove('bg-yellow-500', 'hover:bg-yellow-600');
+            addBtn.classList.add(addColor);
+            cancelBtn.style.display = 'none';
+        }
+
+        // --- Predictor Functions ---
+        
+        function updatePredictionHelpText() {
+            const selectedType = document.querySelector('input[name="predictionType"]:checked').value;
+            if (selectedType === 'budget') {
+                ui.predictionHelpText.textContent = `Based on your planned 'Budgeted Surplus' (${formatCurrency(state.budgetedSurplus)}).`;
+            } else {
+                ui.predictionHelpText.textContent = `Based on your 'Actual Surplus' (${formatCurrency(state.actualSurplus)}). This is your real cash on hand.`;
+            }
+        }
+
+        function checkPrediction() {
+            const proposedAmount = parseFloat(ui.newExpenseAmount.value);
+            const selectedType = document.querySelector('input[name="predictionType"]:checked').value;
+
+            if (isNaN(proposedAmount) || proposedAmount <= 0) {
+                showPredictionResult("Please enter a valid purchase amount.", true);
+                return;
+            }
+
+            let fundToTest, fundName;
+            if (selectedType === 'budget') {
+                fundToTest = state.budgetedSurplus;
+                fundName = 'Budgeted Surplus';
+            } else {
+                fundToTest = state.actualSurplus;
+                fundName = 'Actual Surplus';
+            }
+            
+            const finalAmount = fundToTest - proposedAmount;
+
+            if (finalAmount < 0) {
+                const deficit = Math.abs(finalAmount);
+                showPredictionResult(`<strong>Warning!</strong> This purchase will make your ${fundName} <strong>${formatCurrency(deficit)} over budget</strong>.`, true);
+            } else {
+                showPredictionResult(`<strong>Safe!</strong> Your ${fundName} will have <strong>${formatCurrency(finalAmount)} remaining</strong> after this purchase.`, false);
+            }
+        }
+
+        function clearPrediction() {
+            ui.newExpenseAmount.value = '';
+            ui.predictionResult.classList.add('hidden');
+            ui.predictionResult.innerHTML = '';
+        }
+
+        function showPredictionResult(message, isWarning) {
+            const el = ui.predictionResult;
+            el.innerHTML = message;
+            
+            if (isWarning) {
+                el.className = 'mt-4 p-4 rounded-lg text-center font-medium bg-red-100 text-red-800';
+            } else {
+                el.className = 'mt-4 p-4 rounded-lg text-center font-medium bg-green-100 text-green-800';
+            }
+            
+            el.classList.remove('hidden');
+        }
+
+        // --- Start App ---
+        document.addEventListener('DOMContentLoaded', init);
+
+    </script>
+</body>
+</html>
