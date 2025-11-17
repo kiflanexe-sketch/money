@@ -485,18 +485,43 @@
         function saveConfig() {
             const configString = ui.firebaseConfigInput.value;
             try {
-                // Test parsing
-                JSON.parse(configString);
+                // Find the start and end of the object
+                const startIndex = configString.indexOf('{');
+                const endIndex = configString.lastIndexOf('}');
+                
+                if (startIndex === -1 || endIndex === -1) {
+                    throw new Error("Could not find { and } in the config.");
+                }
+
+                // Extract just the object string
+                let objectString = configString.substring(startIndex, endIndex + 1);
+
+                // Use new Function() for safe evaluation of the JS object string
+                // This correctly handles keys without quotes (e.g., apiKey: "...")
+                const configObject = new Function('return (' + objectString + ')')();
+
+                // Validate the resulting object
+                if (!configObject || !configObject.apiKey || !configObject.authDomain) {
+                    throw new Error('Config object is invalid or missing "apiKey" or "authDomain".');
+                }
+                
+                // Now, stringify our valid object into a valid JSON string for storage
+                const configToSave = JSON.stringify(configObject);
                 
                 // Save and reload
-                localStorage.setItem('firebaseConfig', configString);
-                ui.firebaseConfigModal.classList.remove('hidden');
+                localStorage.setItem('firebaseConfig', configToSave);
+                ui.firebaseConfigModal.classList.add('hidden'); // Hide modal immediately
                 ui.loading.classList.remove('hidden');
                 ui.loading.textContent = "Config saved. Reloading...";
-                location.reload();
+                
+                // Give a slight delay for the user to see the message
+                setTimeout(() => {
+                    location.reload();
+                }, 1000);
                 
             } catch (e) {
-                ui.configError.textContent = "Invalid JSON. Please paste the exact config object.";
+                console.error("Config save error:", e.message);
+                ui.configError.textContent = "Invalid config. Please paste the snippet from Firebase again.";
                 ui.configError.classList.remove('hidden');
             }
         }
