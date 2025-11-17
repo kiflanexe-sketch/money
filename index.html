@@ -396,6 +396,7 @@
         let currentMonthId; // e.g., "2025-11"
         let collectionPath;
         let historyChart = null; // Chart instance
+        let unsubscribeSnapshot = null; // Moved to global
 
         // --- App State ---
         const state = {
@@ -517,7 +518,7 @@
 
         function formatSelisih(actual, budget, type = 'expense') {
             let selisih = (type === 'expense') ? (budget - actual) : (actual - budget);
-            let percent = (budget === 0) ? 0 : (selisih / budget) * 100;
+            let percent = (budget === 0) ? 0 : (selisih / Math.abs(budget)) * 100; // Use Math.abs for percent calc
             
             let colorClass = 'selisih-netral';
             if (selisih > 0) colorClass = 'selisih-positif';
@@ -536,7 +537,7 @@
 
         function getPreviousMonthId(monthId) {
             const [year, month] = monthId.split('-').map(Number);
-            const prevDate = new Date(year, month - 1, 0); // Day 0 of current month = last day of previous
+            const prevDate = new Date(year, month - 2, 1); // Go back 1 month
             return prevDate.toISOString().slice(0, 7);
         }
 
@@ -607,7 +608,7 @@
                         
                         // Then load secondary data in background
                         populateMonthSelectorList();
-                        fetchAndRenderHistoryGraph();
+                        fetchAndRenderHistoryGraph(); // This is now non-blocking
                         
                     } else {
                         // User is signed out
@@ -1035,12 +1036,18 @@
          * Recalculates all 'actual' fields in expenseBudgets based on the expenseLog.
          */
         function recalculateBudgetActuals() {
-            state.expenseBudgets.forEach(item => {
-                item.actual = state.expenseLog
-                    .filter(log => log.categoryId === item.id)
-                    .reduce((sum, log) => sum + (log.amount || 0), 0);
+            // Reset all actuals to 0 first
+            state.expenseBudgets.forEach(item => item.actual = 0);
+            
+            // Sum up from the log
+            state.expenseLog.forEach(log => {
+                const budgetItem = state.expenseBudgets.find(b => b.id === log.categoryId);
+                if (budgetItem) {
+                    budgetItem.actual += (log.amount || 0);
+                }
             });
         }
+
 
         function updateUI() {
             // 1. Recalculate all totals from state
@@ -1049,6 +1056,8 @@
             
             recalculateBudgetActuals(); // Ensure budget actuals are fresh
             state.totalBudgetExpense = state.expenseBudgets.reduce((sum, item) => sum + (item.amount || 0), 0);
+            
+            // Total actual expense is a simple sum of the log
             state.totalActualExpense = state.expenseLog.reduce((sum, log) => sum + (log.amount || 0), 0);
             
             state.budgetedSurplus = state.totalBudgetIncome - state.totalBudgetExpense;
@@ -1176,6 +1185,9 @@
                 const dailyAdvice = (remainingDays > 0 && state.selectedMonth === currentMonthId) ? (remainingBudget / remainingDays) : 0;
                 const adviceText = (state.selectedMonth === currentMonthId) ? `Daily Advice (Rest of Month):` : `Daily Advice (For ${state.selectedMonth}):`;
                 
+                // Only show daily advice if it's positive and the budget wasn't negative to begin with
+                const showAdvice = (dailyAdvice > 0 && item.amount > 0 && state.selectedMonth === currentMonthId);
+
                 li.innerHTML = `
                     <div class="flex justify-between items-center mb-2">
                         <span class="font-medium text-gray-800">${item.name}</span>
@@ -1201,7 +1213,7 @@
                             <span>Remaining:</span>
                             ${formatSelisih(item.actual || 0, item.amount, 'expense')}
                         </div>
-                        ${(dailyAdvice > 0 && item.amount > 0) ? `
+                        ${showAdvice ? `
                         <div class="flex justify-between text-xs text-blue-600 pt-1 border-t mt-1">
                             <span>${adviceText}</span>
                             <span class="font-medium">${formatCurrency(dailyAdvice)} / day</span>
@@ -1219,7 +1231,7 @@
                 return;
             }
             
-            const sortedItems = [...items].reverse();
+            const sortedItems = [...items].sort((a, b) => new Date(b.date) - new Date(a.date)); // Sort by date descending
 
             sortedItems.forEach(item => {
                 const category = state.expenseBudgets.find(c => c.id === item.categoryId);
@@ -1272,8 +1284,8 @@
                 await setDoc(docRef, fullState, { merge: false }); // merge: false ensures it overwrites/creates
                 console.log("Data saved:", fullState);
 
-                // (NEW) Refresh graph data after saving
-                await fetchAndRenderHistoryGraph(); 
+                // (NEW) Refresh graph data after saving (non-blocking)
+                fetchAndRenderHistoryGraph(); 
 
             } catch (error) {
                 console.error("Error saving data:", error);
@@ -1285,7 +1297,7 @@
         function manageIncomeItem() {
             const name = ui.incomeItemName.value.trim();
             const amount = parseFloat(ui.incomeItemAmount.value);
-            if (!name || isNaN(amount) || amount <= 0) {
+            if (!name || isNaN(amount)) { // Allow 0 or negative amounts
                 alert("Please enter a valid name and amount.");
                 return;
             }
@@ -1336,7 +1348,7 @@
         function manageExpenseBudget() {
             const name = ui.fixedItemName.value.trim();
             const amount = parseFloat(ui.fixedItemAmount.value);
-            if (name === "" || isNaN(amount)) {
+            if (name === "" || isNaN(amount)) { // Allow 0 or negative amounts
                 alert("Please enter a valid name and amount.");
                 return;
             }
@@ -1565,47 +1577,64 @@
         // --- History Graph Functions ---
 
         /**
-         * Fetches data for the last 12 months and renders the history graph.
+         * (PERFORMANCE FIX) Fetches data for the last 12 months in parallel.
          * (Runs in background)
          */
         async function fetchAndRenderHistoryGraph() {
             if (!isAuthReady) return;
-            console.log("Fetching data for 12-month history graph...");
+            console.log("Fetching data for 12-month history graph (parallel)...");
 
             const labels = [];
-            const incomeData = [];
-            const expenseData = [];
+            const docRefs = [];
             
-            let date = new Date(currentMonthId + "-01T12:00:00Z"); // Start from current month, set time to avoid timezone issues
+            let date = new Date(currentMonthId + "-01T12:00:00Z"); // Start from current month
 
             for (let i = 0; i < 12; i++) {
                 const monthId = date.toISOString().slice(0, 7);
                 labels.push(formatMonthIdForChart(monthId)); // Use short format for chart
-                
-                const docSnap = await getDoc(doc(db, collectionPath, monthId));
-                
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    const totalActualIncome = (data.incomeItems || []).reduce((sum, item) => sum + (item.actual || 0), 0);
-                    const totalActualExpense = (data.expenseLog || []).reduce((sum, log) => sum + (log.amount || 0), 0);
-                    incomeData.push(totalActualIncome);
-                    expenseData.push(totalActualExpense);
-                } else {
-                    incomeData.push(0);
-                    expenseData.push(0);
-                }
+                docRefs.push(getDoc(doc(db, collectionPath, monthId)));
                 
                 // Go to previous month
                 date.setMonth(date.getMonth() - 1);
             }
-
-            // Data was fetched present-to-past, so we must reverse
-            labels.reverse();
-            incomeData.reverse();
-            expenseData.reverse();
             
-            renderHistoryGraph(labels, incomeData, expenseData);
+            // Reverse labels now (present-to-past was correct for loop, but chart needs past-to-present)
+            labels.reverse();
+            
+            try {
+                // (PERFORMANCE FIX) Run all 12 getDoc requests in parallel
+                const docSnaps = await Promise.all(docRefs);
+                
+                const incomeData = [];
+                const expenseData = [];
+
+                // Process the results (which are present-to-past)
+                docSnaps.forEach(docSnap => {
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        const totalActualIncome = (data.incomeItems || []).reduce((sum, item) => sum + (item.actual || 0), 0);
+                        const totalActualExpense = (data.expenseLog || []).reduce((sum, log) => sum + (log.amount || 0), 0);
+                        incomeData.push(totalActualIncome);
+                        expenseData.push(totalActualExpense);
+                    } else {
+                        incomeData.push(0);
+                        expenseData.push(0);
+                    }
+                });
+
+                // (PERFORMANCE FIX) Reverse data arrays to match labels (past-to-present)
+                incomeData.reverse();
+                expenseData.reverse();
+                
+                renderHistoryGraph(labels, incomeData, expenseData);
+                console.log("History graph rendered.");
+
+            } catch (error) {
+                console.error("Error fetching history graph data:", error);
+                // Don't show a breaking error to the user
+            }
         }
+
 
         /**
          * Renders the 12-month history graph using Chart.js.
