@@ -28,6 +28,12 @@
         .selisih-positif { color: #16a34a; /* green-600 */ }
         .selisih-negatif { color: #dc2626; /* red-600 */ }
         .selisih-netral { color: #6b7280; /* gray-500 */ }
+        
+        /* (NEW) Save Status Bar Styles */
+        .status-unsaved { background-color: #fef9c3; color: #a16207; } /* yellow-100, yellow-700 */
+        .status-saving { background-color: #dbeafe; color: #1d4ed8; } /* blue-100, blue-700 */
+        .status-saved { background-color: #dcfce7; color: #15803d; } /* green-100, green-700 */
+        .status-error { background-color: #fee2e2; color: #b91c1c; } /* red-100, red-700 */
     </style>
 </head>
 <body class="bg-gray-100">
@@ -147,6 +153,12 @@
 
         <!-- App Content (Hidden until auth is ready) -->
         <div id="appContainer" class="hidden"> <!-- Wrapper for main content -->
+            
+            <!-- (NEW) Save Status Bar -->
+            <section id="saveStatusBar" class="hidden text-center p-2 rounded-lg mb-4 text-sm font-medium">
+                <!-- JS will populate this -->
+            </section>
+
             <!-- 1. Month Selector -->
             <section class="mb-4">
                 <label for="monthSelector" class="block text-sm font-medium text-gray-700 mb-1">Viewing Data For:</label>
@@ -391,12 +403,15 @@
         
         // --- App Initialization ---
         let app, auth, db, userId, docRef, isAuthReady = false;
-        let appId; // (FIX) Removed default value
+        let appId;
         let daysInMonth, remainingDays;
         let currentMonthId; // e.g., "2025-11"
         let collectionPath;
         let historyChart = null; // Chart instance
-        let unsubscribeSnapshot = null; // Moved to global
+        let unsubscribeSnapshot = null;
+        
+        // (NEW) Save Status Timer
+        let saveTimeout;
 
         // --- App State ---
         const state = {
@@ -419,10 +434,10 @@
         // --- DOM Elements ---
         const ui = {
             loading: document.getElementById('loading'),
-            appContainer: document.getElementById('appContainer'), // (NEW)
+            appContainer: document.getElementById('appContainer'),
             appContent: document.getElementById('app-content'),
 
-            // (NEW) Auth Elements
+            // Auth Elements
             signInScreen: document.getElementById('signInScreen'),
             signInButton: document.getElementById('signInButton'),
             signOutButton: document.getElementById('signOutButton'),
@@ -434,6 +449,9 @@
             configError: document.getElementById('configError'),
             saveConfigBtn: document.getElementById('saveConfigBtn'),
             
+            // (NEW) Save Status
+            saveStatusBar: document.getElementById('saveStatusBar'),
+
             // Actual Income Modal
             actualIncomeModal: document.getElementById('actualIncomeModal'),
             actualIncomeItemName: document.getElementById('actualIncomeItemName'),
@@ -541,6 +559,41 @@
             return prevDate.toISOString().slice(0, 7);
         }
 
+        // --- (NEW) Save Status Handler ---
+        function updateSaveStatus(status, message) {
+            if (saveTimeout) clearTimeout(saveTimeout);
+            
+            const bar = ui.saveStatusBar;
+            bar.classList.remove('hidden', 'status-unsaved', 'status-saving', 'status-saved', 'status-error');
+            
+            switch(status) {
+                case 'unsaved':
+                    bar.classList.add('status-unsaved');
+                    bar.textContent = message || "Unsaved changes...";
+                    break;
+                case 'saving':
+                    bar.classList.add('status-saving');
+                    bar.textContent = message || "Saving...";
+                    break;
+                case 'saved':
+                    bar.classList.add('status-saved');
+                    bar.textContent = message || "All changes saved.";
+                    // Hide after a delay
+                    saveTimeout = setTimeout(() => {
+                        bar.classList.add('hidden');
+                    }, 2000); // Hide after 2 seconds
+                    break;
+                case 'error':
+                    bar.classList.add('status-error');
+                    bar.textContent = message || "Error: Failed to save.";
+                    // Don't hide error
+                    break;
+                case 'hidden':
+                    bar.classList.add('hidden');
+                    break;
+            }
+        }
+
         // --- Main App Functions ---
 
         async function init() {
@@ -585,14 +638,15 @@
                 
                 updateDateInfo();
 
-                // (MODIFIED) Auth State Change Handler
+                // Auth State Change Handler
                 onAuthStateChanged(auth, async (user) => {
+                    updateSaveStatus('hidden'); // (NEW) Hide status bar on auth change
                     if (user) {
                         // User is signed in
                         console.log("User authenticated:", user.uid, user.displayName);
                         userId = user.uid;
                         isAuthReady = true;
-                        collectionPath = `artifacts/${appId}/users/${userId}/monthlyFinance`; // Path is now user-specific and CORRECT
+                        collectionPath = `artifacts/${appId}/users/${userId}/monthlyFinance`;
                         console.log("Database path set to:", collectionPath);
 
                         // Show App, Hide Login
@@ -602,13 +656,13 @@
                         ui.signOutButton.classList.remove('hidden');
                         ui.headerSubtitle.textContent = `Welcome, ${user.displayName || 'User'}!`;
                         
-                        // (NEW) Performance Fix: Load current month data FIRST
+                        // Performance Fix: Load current month data FIRST
                         state.selectedMonth = currentMonthId;
                         await loadData(); // Wait for primary data
                         
                         // Then load secondary data in background
                         populateMonthSelectorList();
-                        fetchAndRenderHistoryGraph(); // This is now non-blocking
+                        fetchAndRenderHistoryGraph();
                         
                     } else {
                         // User is signed out
@@ -661,24 +715,20 @@
                 let objectString = configString.substring(startIndex, endIndex + 1);
 
                 // Use new Function() for safe evaluation of the JS object string
-                // This correctly handles keys without quotes (e.g., apiKey: "...")
                 const configObject = new Function('return (' + objectString + ')')();
 
                 // Validate the resulting object
-                if (!configObject || !configObject.apiKey || !configObject.authDomain || !configObject.appId) { // (FIX) Also check for appId
+                if (!configObject || !configObject.apiKey || !configObject.authDomain || !configObject.appId) {
                     throw new Error('Config object is invalid or missing "apiKey", "authDomain", or "appId".');
                 }
                 
-                // Now, stringify our valid object into a valid JSON string for storage
                 const configToSave = JSON.stringify(configObject);
                 
-                // Save and reload
                 localStorage.setItem('firebaseConfig', configToSave);
-                ui.firebaseConfigModal.classList.add('hidden'); // Hide modal immediately
+                ui.firebaseConfigModal.classList.add('hidden');
                 ui.loading.classList.remove('hidden');
                 ui.loading.textContent = "Config saved. Reloading...";
                 
-                // Give a slight delay for the user to see the message
                 setTimeout(() => {
                     location.reload();
                 }, 1000);
@@ -690,10 +740,6 @@
             }
         }
 
-        /**
-         * (NEW) Fetches all month IDs to populate the selector list.
-         * Runs in the background AFTER initial load.
-         */
         async function populateMonthSelectorList() {
             if (!isAuthReady) return;
             console.log("Populating month selector list in background...");
@@ -702,15 +748,13 @@
                 const querySnapshot = await getDocs(collection(db, collectionPath));
                 let monthIds = querySnapshot.docs.map(doc => doc.id);
                 
-                // Ensure current month is always an option
                 if (!monthIds.includes(currentMonthId)) {
                     monthIds.push(currentMonthId);
                 }
                 
-                // Sort descending
                 monthIds.sort().reverse(); 
                 
-                ui.monthSelector.innerHTML = ''; // Clear (might just have current month)
+                ui.monthSelector.innerHTML = '';
                 monthIds.forEach(monthId => {
                     const option = document.createElement('option');
                     option.value = monthId;
@@ -718,25 +762,16 @@
                     ui.monthSelector.appendChild(option);
                 });
                 
-                // Re-set selector to the one we are viewing
                 ui.monthSelector.value = state.selectedMonth;
                 
             } catch (error) {
                 console.error("Error populating month selector:", error);
-                // Don't show error to user, just log it, as app is already running
             }
         }
 
-        /**
-         * Formats "2025-11" to "November 2025"
-         */
         function formatMonthId(monthId) {
             const [year, month] = monthId.split('-').map(Number);
             const date = new Date(year, month - 1);
-            // Use 'short' for month for brevity in chart labels
-            const shortFormat = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-            if (monthId.length > 7) return shortFormat; // safety
-            // Use 'long' for the selector
             return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
         }
         
@@ -747,7 +782,7 @@
         }
 
         function addEventListeners() {
-            // (NEW) Auth Listeners
+            // Auth Listeners
             ui.signInButton.addEventListener('click', signInWithGoogle);
             ui.signOutButton.addEventListener('click', signOutUser);
 
@@ -787,7 +822,7 @@
             ui.confirmImportBtn.addEventListener('click', confirmImport);
         }
 
-        // --- (NEW) Auth Functions ---
+        // --- Auth Functions ---
         async function signInWithGoogle() {
             const provider = new GoogleAuthProvider();
             try {
@@ -813,39 +848,31 @@
         }
 
 
-        /**
-         * Handles changing the month selector.
-         */
         async function handleMonthChange() {
             state.selectedMonth = ui.monthSelector.value;
             console.log(`Month changed to: ${state.selectedMonth}`);
             await loadData();
         }
 
-        /**
-         * Loads data for the currently selected month.
-         */
         async function loadData() {
             if (!isAuthReady || !userId || !state.selectedMonth) {
                 console.warn("loadData called before auth or month selection is ready.");
                 return;
             }
 
-            // --- CRITICAL: Unsubscribe from old listener ---
             if (unsubscribeSnapshot) {
                 console.log("Unsubscribing from old snapshot listener.");
                 unsubscribeSnapshot();
                 unsubscribeSnapshot = null;
             }
 
-            // (FIX) collectionPath is now guaranteed to be correct
             docRef = doc(db, collectionPath, state.selectedMonth);
             console.log(`Listening to doc: ${collectionPath}/${state.selectedMonth}`);
 
-            ui.loading.classList.remove('hidden'); // Show loading when changing months
+            ui.loading.classList.remove('hidden');
             ui.appContent.classList.add('hidden');
+            updateSaveStatus('hidden'); // (NEW) Hide status on load
 
-            // (NEW) Add current month to selector if it's not there (e.g., on first load)
             if (!ui.monthSelector.querySelector(`option[value="${state.selectedMonth}"]`)) {
                 const option = document.createElement('option');
                 option.value = state.selectedMonth;
@@ -871,19 +898,16 @@
                     state.expenseLog = [];
                 }
                 
-                // Recalculate actuals from log
                 recalculateBudgetActuals();
                 updateUI();
-                updateImportButtonVisibility(); // Check if import button should show
+                updateImportButtonVisibility();
             }, (error) => {
                 console.error("Error listening to document:", error);
                 ui.loading.textContent = "Error loading data for this month.";
+                updateSaveStatus('error', 'Error loading data.'); // (NEW) Show error
             });
         }
         
-        /**
-         * Shows/hides the import button based on context.
-         */
         function updateImportButtonVisibility() {
             const isCurrentMonth = (state.selectedMonth === currentMonthId);
             const isBudgetEmpty = (state.incomeItems.length === 0 && state.expenseBudgets.length === 0);
@@ -895,9 +919,6 @@
             }
         }
 
-        /**
-         * (MODIFIED) Opens import modal, fetches prior data, and calculates surplus/deficit.
-         */
         async function openImportModal() {
             const prevMonthId = getPreviousMonthId(state.selectedMonth);
             console.log(`Fetching data for import from: ${prevMonthId}`);
@@ -918,7 +939,6 @@
                 return;
             }
 
-            // (MODIFIED) Calculate previous month's actual surplus/deficit
             const prevActualIncome = (prevData.incomeItems || []).reduce((sum, item) => sum + (item.actual || 0), 0);
             const prevActualExpense = (prevData.expenseLog || []).reduce((sum, log) => sum + (log.amount || 0), 0);
             const prevActualSurplus = prevActualIncome - prevActualExpense;
@@ -944,12 +964,8 @@
             // Populate Expense List
             ui.importExpenseList.innerHTML = ''; // Always clear first
 
-            // (MODIFIED) Add surplus/deficit as the first item
             if (prevActualSurplus !== 0) {
                 const isSurplus = prevActualSurplus > 0;
-                // (MODIFIED) Logic for surplus/deficit as expense
-                // Surplus (sisa dana) > 0. Ini PENGURANG budget expense. Amount = negatif.
-                // Deficit (beban) < 0. Ini PENAMBAH budget expense. Amount = positif.
                 const name = isSurplus ? "Sisa Dana Bulan Lalu (Pengurang Biaya)" : "Defisit Bulan Lalu (Beban Biaya)";
                 const amount = isSurplus ? -prevActualSurplus : Math.abs(prevActualSurplus);
                 
@@ -963,10 +979,8 @@
                 ui.importExpenseList.appendChild(el);
             }
 
-            // (MODIFIED) Add the rest of the expense budgets
             if (prevData.expenseBudgets && prevData.expenseBudgets.length > 0) {
                 prevData.expenseBudgets.forEach(item => {
-                    // (NEW) Don't re-import old surplus/deficit items
                     if (item.name.toLowerCase().includes("sisa dana") || item.name.toLowerCase().includes("defisit")) {
                         return;
                     }
@@ -980,17 +994,14 @@
                     ui.importExpenseList.appendChild(el);
                 });
             } else if (prevActualSurplus === 0) {
-                 // Only show if no surplus AND no budgets
                  ui.importExpenseList.innerHTML = '<p class="text-gray-500 text-sm">No expense budget found from last month.</p>';
             }
 
             ui.importModal.classList.remove('hidden');
         }
 
-        /**
-         * Confirms the import, reading from the modal and saving data.
-         */
         async function confirmImport() {
+            updateSaveStatus('unsaved'); // (NEW)
             const newIncomeItems = [];
             const newExpenseBudgets = [];
 
@@ -1001,14 +1012,13 @@
                 const name = box.dataset.name;
                 const amount = parseFloat(parent.querySelector('.import-amount').value);
                 
-                // Don't import if amount is not a number
                 if (isNaN(amount)) return;
 
                 const newItem = {
                     id: crypto.randomUUID(),
                     name: name,
                     amount: amount,
-                    actual: 0 // Always reset actual
+                    actual: 0
                 };
                 
                 if (box.dataset.type === 'income') {
@@ -1020,26 +1030,18 @@
 
             console.log("Importing new items:", newIncomeItems, newExpenseBudgets);
             
-            // Add to existing state (which should be empty, but this is safer)
             state.incomeItems = [...state.incomeItems, ...newIncomeItems];
             state.expenseBudgets = [...state.expenseBudgets, ...newExpenseBudgets];
 
-            // Save the new data
             await saveData();
 
             ui.importModal.classList.add('hidden');
-            // The onSnapshot listener will automatically update the UI
         }
 
         
-        /**
-         * Recalculates all 'actual' fields in expenseBudgets based on the expenseLog.
-         */
         function recalculateBudgetActuals() {
-            // Reset all actuals to 0 first
             state.expenseBudgets.forEach(item => item.actual = 0);
             
-            // Sum up from the log
             state.expenseLog.forEach(log => {
                 const budgetItem = state.expenseBudgets.find(b => b.id === log.categoryId);
                 if (budgetItem) {
@@ -1054,10 +1056,8 @@
             state.totalBudgetIncome = state.incomeItems.reduce((sum, item) => sum + (item.amount || 0), 0);
             state.totalActualIncome = state.incomeItems.reduce((sum, item) => sum + (item.actual || 0), 0);
             
-            recalculateBudgetActuals(); // Ensure budget actuals are fresh
+            recalculateBudgetActuals();
             state.totalBudgetExpense = state.expenseBudgets.reduce((sum, item) => sum + (item.amount || 0), 0);
-            
-            // Total actual expense is a simple sum of the log
             state.totalActualExpense = state.expenseLog.reduce((sum, log) => sum + (log.amount || 0), 0);
             
             state.budgetedSurplus = state.totalBudgetIncome - state.totalBudgetExpense;
@@ -1097,15 +1097,12 @@
 
             // 8. Disable/Enable inputs based on month
             const isCurrent = state.selectedMonth === currentMonthId;
-            // (MODIFIED) Selectors updated to match new structure
             const allInputs = document.querySelectorAll('#app-content input, #app-content button, #app-content select');
             const monthSelector = document.getElementById('monthSelector');
             
             allInputs.forEach(el => {
-                // Don't disable the month selector itself
                 if (el === monthSelector) return;
 
-                // Check if element is inside a modal (modals should always be enabled)
                 const isInsideModal = el.closest('#firebaseConfigModal') || 
                                       el.closest('#actualIncomeModal') || 
                                       el.closest('#importModal');
@@ -1116,7 +1113,6 @@
                     return;
                 }
 
-                // Otherwise, disable/enable based on current month
                 el.disabled = !isCurrent;
                 if (!isCurrent) {
                     el.classList.add('opacity-70', 'cursor-not-allowed');
@@ -1127,7 +1123,7 @@
         }
 
         function renderIncomeList(listElement, items) {
-            listElement.innerHTML = ''; // Clear list
+            listElement.innerHTML = '';
             if (items.length === 0) {
                 listElement.innerHTML = `<p class="text-gray-500 text-center">No income sources added yet.</p>`;
                 return;
@@ -1172,7 +1168,7 @@
         }
         
         function renderBudgetList(listElement, items) {
-            listElement.innerHTML = ''; // Clear list
+            listElement.innerHTML = '';
             if (items.length === 0) {
                 listElement.innerHTML = `<p class="text-gray-500 text-center">No budget categories added yet.</p>`;
                 return;
@@ -1185,7 +1181,6 @@
                 const dailyAdvice = (remainingDays > 0 && state.selectedMonth === currentMonthId) ? (remainingBudget / remainingDays) : 0;
                 const adviceText = (state.selectedMonth === currentMonthId) ? `Daily Advice (Rest of Month):` : `Daily Advice (For ${state.selectedMonth}):`;
                 
-                // Only show daily advice if it's positive and the budget wasn't negative to begin with
                 const showAdvice = (dailyAdvice > 0 && item.amount > 0 && state.selectedMonth === currentMonthId);
 
                 li.innerHTML = `
@@ -1225,13 +1220,13 @@
         }
         
         function renderExpenseLog(listElement, items, emptyMessage) {
-            listElement.innerHTML = ''; // Clear list
+            listElement.innerHTML = '';
             if (items.length === 0) {
                 listElement.innerHTML = `<p class="text-gray-500 text-center">${emptyMessage}</p>`;
                 return;
             }
             
-            const sortedItems = [...items].sort((a, b) => new Date(b.date) - new Date(a.date)); // Sort by date descending
+            const sortedItems = [...items].sort((a, b) => new Date(b.date) - new Date(a.date));
 
             sortedItems.forEach(item => {
                 const category = state.expenseBudgets.find(c => c.id === item.categoryId);
@@ -1268,52 +1263,62 @@
             ui.expenseCategorySelect.innerHTML += '<option value="other">Other (Unbudgeted)</option>';
         }
 
+        // --- (MODIFIED) Save Data with Status Feedback ---
         async function saveData() {
             if (!docRef) {
                 console.error("docRef is not initialized. Cannot save.");
                 return;
             }
+
+            // (NEW) Show saving status
+            updateSaveStatus('saving');
+
             try {
-                // Ensure all parts of the state are saved
                 const fullState = {
                     incomeItems: state.incomeItems,
                     expenseBudgets: state.expenseBudgets,
                     expenseLog: state.expenseLog
                 };
-                // Use setDoc to create or overwrite the doc for the selected month
-                await setDoc(docRef, fullState, { merge: false }); // merge: false ensures it overwrites/creates
+                
+                await setDoc(docRef, fullState, { merge: false });
                 console.log("Data saved:", fullState);
 
-                // (NEW) Refresh graph data after saving (non-blocking)
+                // (NEW) Show saved status
+                updateSaveStatus('saved');
+
                 fetchAndRenderHistoryGraph(); 
 
             } catch (error) {
-                console.error("Error saving data:", error);
+                console.error("CRITICAL: Error saving data:", error);
+                
+                // (NEW) Show error status AND alert the user
+                const errorMessage = `Error: Failed to save data. (${error.code || error.message})`;
+                updateSaveStatus('error', errorMessage);
+                alert(errorMessage + "\n\nPlease check your internet connection or Firebase permissions. Your last change was NOT saved.");
             }
         }
 
-        // --- Item Management Functions ---
+        // --- Item Management Functions (with 'unsaved' status) ---
 
         function manageIncomeItem() {
             const name = ui.incomeItemName.value.trim();
             const amount = parseFloat(ui.incomeItemAmount.value);
-            if (!name || isNaN(amount)) { // Allow 0 or negative amounts
+            if (!name || isNaN(amount)) {
                 alert("Please enter a valid name and amount.");
                 return;
             }
 
+            updateSaveStatus('unsaved'); // (NEW)
             if (state.editingIncomeId) {
-                // Edit existing
                 state.incomeItems = state.incomeItems.map(item => 
                     item.id === state.editingIncomeId ? { ...item, name, amount } : item
                 );
             } else {
-                // Add new
                 const newItem = { id: crypto.randomUUID(), name, amount, actual: 0 };
                 state.incomeItems.push(newItem);
             }
             
-            saveData();
+            saveData(); // This will handle 'saving' and 'saved'
             cancelEdit('income');
         }
         
@@ -1339,6 +1344,7 @@
             
             const item = state.incomeItems.find(i => i.id === id);
             if (item) {
+                updateSaveStatus('unsaved'); // (NEW)
                 item.actual = amount;
                 saveData();
             }
@@ -1348,18 +1354,17 @@
         function manageExpenseBudget() {
             const name = ui.fixedItemName.value.trim();
             const amount = parseFloat(ui.fixedItemAmount.value);
-            if (name === "" || isNaN(amount)) { // Allow 0 or negative amounts
+            if (name === "" || isNaN(amount)) {
                 alert("Please enter a valid name and amount.");
                 return;
             }
 
+            updateSaveStatus('unsaved'); // (NEW)
             if (state.editingFixedId) {
-                // Edit existing
                 state.expenseBudgets = state.expenseBudgets.map(item => 
                     item.id === state.editingFixedId ? { ...item, name, amount } : item
                 );
             } else {
-                // Add new
                 const newItem = { id: crypto.randomUUID(), name, amount, actual: 0 };
                 state.expenseBudgets.push(newItem);
             }
@@ -1382,18 +1387,16 @@
                 return;
             }
 
+            updateSaveStatus('unsaved'); // (NEW)
             if (state.editingDynamicId) {
-                // Edit existing
                 state.expenseLog = state.expenseLog.map(item => 
                     item.id === state.editingDynamicId ? { ...item, categoryId, name, amount } : item
                 );
             } else {
-                // Add new
                 const newItem = { id: crypto.randomUUID(), categoryId, name, amount, date: new Date().toISOString() };
                 state.expenseLog.push(newItem);
             }
             
-            // Recalculate budget actuals and save
             recalculateBudgetActuals();
             saveData();
             cancelEdit('dynamic');
@@ -1406,9 +1409,9 @@
             else if (type === 'expenseLog') stateArrayKey = 'expenseLog';
             else return;
 
+            updateSaveStatus('unsaved'); // (NEW)
             state[stateArrayKey] = state[stateArrayKey].filter(item => item.id !== id);
             
-            // If deleting a log, must recalculate actuals
             if (type === 'expenseLog') {
                 recalculateBudgetActuals();
             }
@@ -1423,10 +1426,9 @@
             else if (key === 'expenseLog') stateArrayKey = 'expenseLog';
             else return;
 
-            // REMOVED confirm() call which was blocking execution
+            updateSaveStatus('unsaved'); // (NEW)
             state[stateArrayKey] = [];
             
-            // If deleting all logs, reset budget actuals
             if (key === 'expenseLog') {
                 state.expenseBudgets.forEach(item => item.actual = 0);
             }
@@ -1576,10 +1578,6 @@
 
         // --- History Graph Functions ---
 
-        /**
-         * (PERFORMANCE FIX) Fetches data for the last 12 months in parallel.
-         * (Runs in background)
-         */
         async function fetchAndRenderHistoryGraph() {
             if (!isAuthReady) return;
             console.log("Fetching data for 12-month history graph (parallel)...");
@@ -1587,28 +1585,23 @@
             const labels = [];
             const docRefs = [];
             
-            let date = new Date(currentMonthId + "-01T12:00:00Z"); // Start from current month
+            let date = new Date(currentMonthId + "-01T12:00:00Z");
 
             for (let i = 0; i < 12; i++) {
                 const monthId = date.toISOString().slice(0, 7);
-                labels.push(formatMonthIdForChart(monthId)); // Use short format for chart
+                labels.push(formatMonthIdForChart(monthId));
                 docRefs.push(getDoc(doc(db, collectionPath, monthId)));
-                
-                // Go to previous month
                 date.setMonth(date.getMonth() - 1);
             }
             
-            // Reverse labels now (present-to-past was correct for loop, but chart needs past-to-present)
             labels.reverse();
             
             try {
-                // (PERFORMANCE FIX) Run all 12 getDoc requests in parallel
                 const docSnaps = await Promise.all(docRefs);
                 
                 const incomeData = [];
                 const expenseData = [];
 
-                // Process the results (which are present-to-past)
                 docSnaps.forEach(docSnap => {
                     if (docSnap.exists()) {
                         const data = docSnap.data();
@@ -1622,7 +1615,6 @@
                     }
                 });
 
-                // (PERFORMANCE FIX) Reverse data arrays to match labels (past-to-present)
                 incomeData.reverse();
                 expenseData.reverse();
                 
@@ -1631,17 +1623,13 @@
 
             } catch (error) {
                 console.error("Error fetching history graph data:", error);
-                // Don't show a breaking error to the user
             }
         }
 
 
-        /**
-         * Renders the 12-month history graph using Chart.js.
-         */
         function renderHistoryGraph(labels, incomeData, expenseData) {
             if (historyChart) {
-                historyChart.destroy(); // Destroy old chart instance
+                historyChart.destroy();
             }
 
             const ctx = ui.historyChartCanvas.getContext('2d');
@@ -1675,7 +1663,6 @@
                         y: {
                             beginAtZero: true,
                             ticks: {
-                                // Format as currency (simplified, no "Rp")
                                 callback: function(value, index, values) {
                                     if (value >= 1000000) return (value / 1000000) + 'M';
                                     if (value >= 1000) return (value / 1000) + 'K';
