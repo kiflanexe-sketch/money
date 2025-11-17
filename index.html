@@ -9,7 +9,7 @@
     <!-- Load Icons (Ionicons) -->
     <script type="module" src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.esm.js"></script>
     <script nomodule src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.js"></script>
-    <!-- (NEW) Load Chart.js -->
+    <!-- Load Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         /* Use Inter font */
@@ -115,17 +115,30 @@
         
         <!-- Header -->
         <header class="text-center mb-6">
-            <h1 class="text-3xl font-bold text-blue-700">Finance Predictor</h1>
-            <p class="text-gray-600">Track your budget vs. actual spending.</p>
+            <div class="flex justify-between items-center">
+                <div class="w-1/3"></div> <!-- Placeholder for spacing -->
+                <div class="w-1/3">
+                    <h1 class="text-3xl font-bold text-blue-700">Finance Predictor</h1>
+                </div>
+                <div class="w-1/3 flex justify-end">
+                    <!-- (NEW) Sign Out Button -->
+                    <button id="signOutButton" class="hidden text-gray-500 hover:text-red-600 transition duration-300">
+                        <ion-icon name="log-out-outline" class="text-3xl"></ion-icon>
+                    </button>
+                </div>
+            </div>
+            <p id="headerSubtitle" class="text-gray-600">Track your budget vs. actual spending.</p>
         </header>
 
-        <!-- (REORDERED) 1. Month Selector -->
-        <section class="mb-4">
-            <label for="monthSelector" class="block text-sm font-medium text-gray-700 mb-1">Viewing Data For:</label>
-            <select id="monthSelector" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm">
-                <!-- JS will populate this -->
-            </select>
-        </section>
+        <!-- (NEW) Sign-in Screen -->
+        <div id="signInScreen" class="hidden text-center p-10 bg-white rounded-xl shadow-lg">
+            <h2 class="text-2xl font-semibold mb-4">Welcome!</h2>
+            <p class="text-gray-600 mb-6">Please sign in with your Google account to sync your financial data across devices.</p>
+            <button id="signInButton" class="w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-blue-700 transition duration-300 flex items-center justify-center space-x-2">
+                <ion-icon name="logo-google" class="text-xl"></ion-icon>
+                <span>Sign in with Google</span>
+            </button>
+        </div>
 
         <!-- Loading Indicator -->
         <div id="loading" class="text-center p-4">
@@ -133,229 +146,244 @@
         </div>
 
         <!-- App Content (Hidden until auth is ready) -->
-        <main id="app-content" class="hidden space-y-6">
+        <div id="appContainer" class="hidden"> <!-- (NEW) Wrapper for main content -->
+            <!-- 1. Month Selector -->
+            <section class="mb-4">
+                <label for="monthSelector" class="block text-sm font-medium text-gray-700 mb-1">Viewing Data For:</label>
+                <select id="monthSelector" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm">
+                    <!-- JS will populate this -->
+                </select>
+            </section>
 
-            <!-- (REORDERED) 2. Financial Dashboard -->
-            <section class="bg-white p-5 rounded-xl shadow-lg">
-                <h2 class="text-xl font-semibold mb-4 text-gray-800 border-b pb-2">Financial Dashboard</h2>
-                <div class="space-y-4">
-                    <!-- Budgeted View -->
-                    <div>
-                        <h3 class="font-semibold text-gray-700">Budgeted View (Plan)</h3>
-                        <div class="flex justify-between items-center p-2 bg-gray-50 rounded-lg">
-                            <span class="text-gray-600">Budgeted Surplus:</span>
-                            <span id="budgetedSurplus" class="font-bold text-lg text-gray-800">Rp 0</span>
+            <main id="app-content" class="space-y-6">
+                <!-- 2. Financial Dashboard -->
+                <section class="bg-white p-5 rounded-xl shadow-lg">
+                    <h2 class="text-xl font-semibold mb-4 text-gray-800 border-b pb-2">Financial Dashboard</h2>
+                    <div class="space-y-4">
+                        <!-- Budgeted View -->
+                        <div>
+                            <h3 class="font-semibold text-gray-700">Budgeted View (Plan)</h3>
+                            <div class="flex justify-between items-center p-2 bg-gray-50 rounded-lg">
+                                <span class="text-gray-600">Budgeted Surplus:</span>
+                                <span id="budgetedSurplus" class="font-bold text-lg text-gray-800">Rp 0</span>
+                            </div>
+                            <p class="text-xs text-gray-500">(Total Budget Income - Total Budget Expense)</p>
                         </div>
-                        <p class="text-xs text-gray-500">(Total Budget Income - Total Budget Expense)</p>
-                    </div>
-                    <!-- Actual View -->
-                    <div>
-                        <h3 class="font-semibold text-gray-700">Actual View (To-Date)</h3>
-                        <div class="flex justify-between items-center p-2 bg-gray-50 rounded-lg">
-                            <span class="text-gray-600">Actual Surplus (Cash on Hand):</span>
-                            <span id="actualSurplus" class="font-bold text-2xl text-blue-600">Rp 0</span>
+                        <!-- Actual View -->
+                        <div>
+                            <h3 class="font-semibold text-gray-700">Actual View (To-Date)</h3>
+                            <div class="flex justify-between items-center p-2 bg-gray-50 rounded-lg">
+                                <span class="text-gray-600">Actual Surplus (Cash on Hand):</span>
+                                <span id="actualSurplus" class="font-bold text-2xl text-blue-600">Rp 0</span>
+                            </div>
+                             <p class="text-xs text-gray-500">(Total Actual Income - Total Actual Expense)</p>
                         </div>
-                         <p class="text-xs text-gray-500">(Total Actual Income - Total Actual Expense)</p>
                     </div>
-                </div>
-            </section>
+                </section>
 
-            <!-- (REORDERED & NEW) 3. History Graph -->
-            <section class="bg-white p-5 rounded-xl shadow-lg">
-                <h2 class="text-xl font-semibold mb-4 text-gray-800 border-b pb-2">History (Last 12 Months)</h2>
-                <div class="relative h-64">
-                    <canvas id="actualsChart"></canvas>
-                </div>
-            </section>
-
-            <!-- (REORDERED) 4. Expense Predictor -->
-            <section class="bg-white p-5 rounded-xl shadow-lg">
-                <h2 class="text-xl font-semibold mb-4 text-gray-800 border-b pb-2">Expense Predictor</h2>
-                
-                <!-- Prediction Type -->
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Predict based on:</label>
-                    <div class="flex space-x-4">
-                        <label class="flex items-center">
-                            <input type="radio" name="predictionType" value="budget" class="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300" checked>
-                            <span class="ml-2 text-gray-700">Remaining Budget</span>
-                        </label>
-                        <label class="flex items-center">
-                            <input type="radio" name="predictionType" value="actual" class="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300">
-                            <span class="ml-2 text-gray-700">Actual Funds</span>
-                        </label>
+                <!-- 3. History Graph -->
+                <section class="bg-white p-5 rounded-xl shadow-lg">
+                    <h2 class="text-xl font-semibold mb-4 text-gray-800 border-b pb-2">History (Last 12 Months)</h2>
+                    <div class="relative h-64">
+                        <canvas id="actualsChart"></canvas>
                     </div>
-                    <p id="predictionHelpText" class="text-xs text-gray-500 mt-1">Based on your planned 'Budgeted Surplus'.</p>
-                </div>
-                
-                <div>
-                    <label for="newExpenseAmount" class="block text-sm font-medium text-gray-700 mb-1">New Purchase Amount</label>
-                    <input type="number" id="newExpenseAmount" placeholder="e.g., 250000" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
-                </div>
-                <div class="flex space-x-2 mt-4">
-                     <button id="checkPredictionBtn" class="w-full bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-indigo-700 transition duration-300">
-                        Check Prediction
+                </section>
+
+                <!-- 4. Expense Predictor -->
+                <section class="bg-white p-5 rounded-xl shadow-lg">
+                    <h2 class="text-xl font-semibold mb-4 text-gray-800 border-b pb-2">Expense Predictor</h2>
+                    
+                    <!-- Prediction Type -->
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Predict based on:</label>
+                        <div class="flex space-x-4">
+                            <label class="flex items-center">
+                                <input type="radio" name="predictionType" value="budget" class="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300" checked>
+                                <span class="ml-2 text-gray-700">Remaining Budget</span>
+                            </label>
+                            <label class="flex items-center">
+                                <input type="radio" name="predictionType" value="actual" class="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300">
+                                <span class="ml-2 text-gray-700">Actual Funds</span>
+                            </label>
+                        </div>
+                        <p id="predictionHelpText" class="text-xs text-gray-500 mt-1">Based on your planned 'Budgeted Surplus'.</p>
+                    </div>
+                    
+                    <div>
+                        <label for="newExpenseAmount" class="block text-sm font-medium text-gray-700 mb-1">New Purchase Amount</label>
+                        <input type="number" id="newExpenseAmount" placeholder="e.g., 250000" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div class="flex space-x-2 mt-4">
+                         <button id="checkPredictionBtn" class="w-full bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-indigo-700 transition duration-300">
+                            Check Prediction
+                        </button>
+                        <button id="clearPredictionBtn" class="w-1/3 bg-gray-400 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-gray-500 transition duration-300">
+                            Clear
+                        </button>
+                    </div>
+                    <!-- Prediction Result -->
+                    <div id="predictionResult" class="mt-4 p-4 rounded-lg text-center font-medium hidden">
+                        <!-- Content filled by JavaScript -->
+                    </div>
+                </section>
+
+                <!-- 5. Import Button container -->
+                <section id="import-container" class="hidden">
+                    <button id="openImportModalBtn" class="w-full bg-blue-100 text-blue-700 font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-blue-200 transition duration-300 flex items-center justify-center space-x-2">
+                        <ion-icon name="download-outline" class="text-xl"></ion-icon>
+                        <span>Import Budget from Last Month</span>
                     </button>
-                    <button id="clearPredictionBtn" class="w-1/3 bg-gray-400 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-gray-500 transition duration-300">
-                        Clear
-                    </button>
-                </div>
-                <!-- Prediction Result -->
-                <div id="predictionResult" class="mt-4 p-4 rounded-lg text-center font-medium hidden">
-                    <!-- Content filled by JavaScript -->
-                </div>
-            </section>
+                </section>
 
-            <!-- (REORDERED) 5. Import Button container -->
-            <section id="import-container" class="hidden">
-                <button id="openImportModalBtn" class="w-full bg-blue-100 text-blue-700 font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-blue-200 transition duration-300 flex items-center justify-center space-x-2">
-                    <ion-icon name="download-outline" class="text-xl"></ion-icon>
-                    <span>Import Budget from Last Month</span>
-                </button>
-            </section>
+                <!-- 6. Manage Income -->
+                <section class="bg-white p-5 rounded-xl shadow-lg">
+                    <h2 class="text-xl font-semibold mb-4 text-gray-800 border-b pb-2">Manage Income (Budget)</h2>
+                    <div class="space-y-4">
+                        <input type="hidden" id="editingIncomeId">
+                        <div>
+                            <label for="incomeItemName" class="block text-sm font-medium text-gray-700 mb-1">Income Source</label>
+                            <input type="text" id="incomeItemName" placeholder="e.g., Salary, Side Hustle" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                        <div>
+                            <label for="incomeItemAmount" class="block text-sm font-medium text-gray-700 mb-1">Budgeted Amount (IDR)</label>
+                            <input type="number" id="incomeItemAmount" placeholder="e.g., 5000000" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                        <div class="flex space-x-2">
+                            <button id="addIncomeItemBtn" class="w-full bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-blue-700 transition duration-300">
+                                Add Income
+                            </button>
+                            <button id="cancelEditIncomeBtn" class="cancel-btn w-1/3 bg-gray-400 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-gray-500 transition duration-300">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Income List -->
+                    <div id="incomeItemList" class="space-y-3 mt-4 max-h-48 overflow-y-auto">
+                        <!-- List filled by JavaScript -->
+                    </div>
+                    <!-- Income Totals -->
+                    <div class="mt-4 pt-4 border-t space-y-2">
+                        <div class="flex justify-between items-center">
+                            <span class="font-medium text-gray-600">Total Budgeted Income:</span>
+                            <span id="totalBudgetIncome" class="font-bold text-gray-800">Rp 0</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="font-medium text-gray-600">Total Actual Income:</span>
+                            <span id="totalActualIncome" class="font-bold text-gray-800">Rp 0</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="font-medium text-gray-600">Selisih (Actual - Budget):</span>
+                            <span id="totalIncomeSelisih" class="font-bold">Rp 0 (0%)</span>
+                        </div>
+                    </div>
+                    <button id="deleteAllIncomeBtn" class="w-full text-sm text-red-500 hover:text-red-700 mt-2">Delete All Income Items</button>
+                </section>
+                
+                <!-- 7. Manage Expense Budgets -->
+                <section class="bg-white p-5 rounded-xl shadow-lg">
+                    <h2 class="text-xl font-semibold mb-4 text-gray-800 border-b pb-2">Manage Expense Budgets</h2>
+                    <p class="text-xs text-gray-500 mb-3">Add budget categories (e.g., Food, Transport, Bills).</p>
+                    <div class="space-y-4">
+                        <input type="hidden" id="editingFixedId">
+                        <div>
+                            <label for="fixedItemName" class="block text-sm font-medium text-gray-700 mb-1">Budget Category Name</label>
+                            <input type="text" id="fixedItemName" placeholder="e.g., Food, Transport, Subscriptions" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                        <div>
+                            <label for="fixedItemAmount" class="block text-sm font-medium text-gray-700 mb-1">Budgeted Amount (IDR)</label>
+                            <input type="number" id="fixedItemAmount" placeholder="e.g., 600000" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                        <div class="flex space-x-2">
+                            <button id="addFixedItemBtn" class="w-full bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-blue-700 transition duration-300">
+                                Add Budget Category
+                            </button>
+                             <button id="cancelEditFixedBtn" class="cancel-btn w-1/3 bg-gray-400 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-gray-500 transition duration-300">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Expense Budget List -->
+                    <div id="fixedSpendingList" class="space-y-3 mt-4 max-h-48 overflow-y-auto">
+                        <!-- List filled by JavaScript -->
+                    </div>
+                    <!-- Expense Totals -->
+                    <div class="mt-4 pt-4 border-t space-y-2">
+                        <div class="flex justify-between items-center">
+                            <span class="font-medium text-gray-600">Total Budgeted Expense:</span>
+                            <span id="totalBudgetExpense" class="font-bold text-gray-800">Rp 0</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="font-medium text-gray-600">Total Actual Expense:</span>
+                            <span id="totalActualExpense" class="font-bold text-gray-800">Rp 0</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="font-medium text-gray-600">Selisih (Budget - Actual):</span>
+                            <span id="totalExpenseSelisih" class="font-bold">Rp 0 (0%)</span>
+                        </div>
+                    </div>
+                    <button id="deleteAllFixedBtn" class="w-full text-sm text-red-500 hover:text-red-700 mt-2">Delete All Budget Categories</button>
+                </section>
 
-            <!-- (REORDERED) 6. Manage Income -->
-            <section class="bg-white p-5 rounded-xl shadow-lg">
-                <h2 class="text-xl font-semibold mb-4 text-gray-800 border-b pb-2">Manage Income (Budget)</h2>
-                <div class="space-y-4">
-                    <input type="hidden" id="editingIncomeId">
-                    <div>
-                        <label for="incomeItemName" class="block text-sm font-medium text-gray-700 mb-1">Income Source</label>
-                        <input type="text" id="incomeItemName" placeholder="e.g., Salary, Side Hustle" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                <!-- 8. Log Actual Expense -->
+                <section class="bg-white p-5 rounded-xl shadow-lg">
+                    <h2 class="text-xl font-semibold mb-4 text-gray-800 border-b pb-2">Log Actual Expense</h2>
+                    <p class="text-sm text-gray-600 mb-4">Log your daily spending against your budget categories.</p>
+                    <div class="space-y-4">
+                        <input type="hidden" id="editingDynamicId">
+                        <div>
+                            <label for="expenseCategorySelect" class="block text-sm font-medium text-gray-700 mb-1">Expense Category</label>
+                            <select id="expenseCategorySelect" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                                <option value="">-- Select Category --</option>
+                                <!-- Options filled by JavaScript -->
+                                <option value="other">Other (Unbudgeted)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="newDynamicExpenseName" class="block text-sm font-medium text-gray-700 mb-1">Expense Name</label>
+                            <input type="text" id="newDynamicExpenseName" placeholder="e.g., Lunch, Coffee, Bus Fare" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                        <div>
+                            <label for="newDynamicExpenseAmount" class="block text-sm font-medium text-gray-700 mb-1">Amount (IDR)</label>
+                            <input type="number" id="newDynamicExpenseAmount" placeholder="e.g., 50000" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                         <div class="flex space-x-2">
+                            <button id="addDynamicExpenseBtn" class="w-full bg-green-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-green-700 transition duration-300">
+                                Log Expense
+                            </button>
+                             <button id="cancelEditDynamicBtn" class="cancel-btn w-1/3 bg-gray-400 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-gray-500 transition duration-300">
+                                Cancel
+                            </button>
+                        </div>
                     </div>
-                    <div>
-                        <label for="incomeItemAmount" class="block text-sm font-medium text-gray-700 mb-1">Budgeted Amount (IDR)</label>
-                        <input type="number" id="incomeItemAmount" placeholder="e.g., 5000000" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
-                    </div>
-                    <div class="flex space-x-2">
-                        <button id="addIncomeItemBtn" class="w-full bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-blue-700 transition duration-300">
-                            Add Income
-                        </button>
-                        <button id="cancelEditIncomeBtn" class="cancel-btn w-1/3 bg-gray-400 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-gray-500 transition duration-300">
-                            Cancel
-                        </button>
-                    </div>
-                </div>
-                <!-- Income List -->
-                <div id="incomeItemList" class="space-y-3 mt-4 max-h-48 overflow-y-auto">
-                    <!-- List filled by JavaScript -->
-                </div>
-                <!-- Income Totals -->
-                <div class="mt-4 pt-4 border-t space-y-2">
-                    <div class="flex justify-between items-center">
-                        <span class="font-medium text-gray-600">Total Budgeted Income:</span>
-                        <span id="totalBudgetIncome" class="font-bold text-gray-800">Rp 0</span>
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <span class="font-medium text-gray-600">Total Actual Income:</span>
-                        <span id="totalActualIncome" class="font-bold text-gray-800">Rp 0</span>
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <span class="font-medium text-gray-600">Selisih (Actual - Budget):</span>
-                        <span id="totalIncomeSelisih" class="font-bold">Rp 0 (0%)</span>
-                    </div>
-                </div>
-                <button id="deleteAllIncomeBtn" class="w-full text-sm text-red-500 hover:text-red-700 mt-2">Delete All Income Items</button>
-            </section>
-            
-            <!-- (REORDERED) 7. Manage Expense Budgets -->
-            <section class="bg-white p-5 rounded-xl shadow-lg">
-                <h2 class="text-xl font-semibold mb-4 text-gray-800 border-b pb-2">Manage Expense Budgets</h2>
-                <p class="text-xs text-gray-500 mb-3">Add budget categories (e.g., Food, Transport, Bills).</p>
-                <div class="space-y-4">
-                    <input type="hidden" id="editingFixedId">
-                    <div>
-                        <label for="fixedItemName" class="block text-sm font-medium text-gray-700 mb-1">Budget Category Name</label>
-                        <input type="text" id="fixedItemName" placeholder="e.g., Food, Transport, Subscriptions" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
-                    </div>
-                    <div>
-                        <label for="fixedItemAmount" class="block text-sm font-medium text-gray-700 mb-1">Budgeted Amount (IDR)</label>
-                        <input type="number" id="fixedItemAmount" placeholder="e.g., 600000" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
-                    </div>
-                    <div class="flex space-x-2">
-                        <button id="addFixedItemBtn" class="w-full bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-blue-700 transition duration-300">
-                            Add Budget Category
-                        </button>
-                         <button id="cancelEditFixedBtn" class="cancel-btn w-1/3 bg-gray-400 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-gray-500 transition duration-300">
-                            Cancel
-                        </button>
-                    </div>
-                </div>
-                <!-- Expense Budget List -->
-                <div id="fixedSpendingList" class="space-y-3 mt-4 max-h-48 overflow-y-auto">
-                    <!-- List filled by JavaScript -->
-                </div>
-                <!-- Expense Totals -->
-                <div class="mt-4 pt-4 border-t space-y-2">
-                    <div class="flex justify-between items-center">
-                        <span class="font-medium text-gray-600">Total Budgeted Expense:</span>
-                        <span id="totalBudgetExpense" class="font-bold text-gray-800">Rp 0</span>
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <span class="font-medium text-gray-600">Total Actual Expense:</span>
-                        <span id="totalActualExpense" class="font-bold text-gray-800">Rp 0</span>
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <span class="font-medium text-gray-600">Selisih (Budget - Actual):</span>
-                        <span id="totalExpenseSelisih" class="font-bold">Rp 0 (0%)</span>
-                    </div>
-                </div>
-                <button id="deleteAllFixedBtn" class="w-full text-sm text-red-500 hover:text-red-700 mt-2">Delete All Budget Categories</button>
-            </section>
+                </section>
 
-            <!-- (REORDERED) 8. Log Actual Expense -->
-            <section class="bg-white p-5 rounded-xl shadow-lg">
-                <h2 class="text-xl font-semibold mb-4 text-gray-800 border-b pb-2">Log Actual Expense</h2>
-                <p class="text-sm text-gray-600 mb-4">Log your daily spending against your budget categories.</p>
-                <div class="space-y-4">
-                    <input type="hidden" id="editingDynamicId">
-                    <div>
-                        <label for="expenseCategorySelect" class="block text-sm font-medium text-gray-700 mb-1">Expense Category</label>
-                        <select id="expenseCategorySelect" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
-                            <option value="">-- Select Category --</option>
-                            <!-- Options filled by JavaScript -->
-                            <option value="other">Other (Unbudgeted)</option>
-                        </select>
+                <!-- 9. Expense Log History -->
+                <section class="bg-white p-5 rounded-xl shadow-lg">
+                    <div class="flex justify-between items-center mb-4 border-b pb-2">
+                        <h2 class="text-xl font-semibold text-gray-800">Expense Log History</h2>
+                        <button id="deleteAllDynamicBtn" class="text-sm text-red-500 hover:text-red-700">Delete All</button>
                     </div>
-                    <div>
-                        <label for="newDynamicExpenseName" class="block text-sm font-medium text-gray-700 mb-1">Expense Name</label>
-                        <input type="text" id="newDynamicExpenseName" placeholder="e.g., Lunch, Coffee, Bus Fare" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                    <div id="dynamicExpenseList" class="space-y-3 max-h-60 overflow-y-auto">
+                        <!-- List filled by JavaScript -->
+                        <p id="emptyListMessage" class="text-gray-500 text-center">No expenses logged yet.</p>
                     </div>
-                    <div>
-                        <label for="newDynamicExpenseAmount" class="block text-sm font-medium text-gray-700 mb-1">Amount (IDR)</label>
-                        <input type="number" id="newDynamicExpenseAmount" placeholder="e.g., 50000" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
-                    </div>
-                     <div class="flex space-x-2">
-                        <button id="addDynamicExpenseBtn" class="w-full bg-green-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-green-700 transition duration-300">
-                            Log Expense
-                        </button>
-                         <button id="cancelEditDynamicBtn" class="cancel-btn w-1/3 bg-gray-400 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-gray-500 transition duration-300">
-                            Cancel
-                        </button>
-                    </div>
-                </div>
-            </section>
+                </section>
 
-            <!-- (REORDERED) 9. Expense Log History -->
-            <section class="bg-white p-5 rounded-xl shadow-lg">
-                <div class="flex justify-between items-center mb-4 border-b pb-2">
-                    <h2 class="text-xl font-semibold text-gray-800">Expense Log History</h2>
-                    <button id="deleteAllDynamicBtn" class="text-sm text-red-500 hover:text-red-700">Delete All</button>
-                </div>
-                <div id="dynamicExpenseList" class="space-y-3 max-h-60 overflow-y-auto">
-                    <!-- List filled by JavaScript -->
-                    <p id="emptyListMessage" class="text-gray-500 text-center">No expenses logged yet.</p>
-                </div>
-            </section>
-
-        </main>
+            </main>
+        </div>
     </div>
 
     <!-- Firebase SDK -->
     <script type="module">
-        // Import Firebase functions
+        // (NEW) Import Google Auth functions
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getAuth, 
+            onAuthStateChanged, 
+            GoogleAuthProvider, 
+            signInWithPopup, 
+            signOut 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, updateDoc, setLogLevel, getDocs, collection, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- Firebase Config (Deployable Mode) ---
@@ -368,7 +396,7 @@
         let daysInMonth, remainingDays;
         let currentMonthId; // e.g., "2025-11"
         let collectionPath;
-        let historyChart = null; // (NEW) Chart instance
+        let historyChart = null; // Chart instance
 
         // --- App State ---
         const state = {
@@ -391,7 +419,14 @@
         // --- DOM Elements ---
         const ui = {
             loading: document.getElementById('loading'),
+            appContainer: document.getElementById('appContainer'), // (NEW)
             appContent: document.getElementById('app-content'),
+
+            // (NEW) Auth Elements
+            signInScreen: document.getElementById('signInScreen'),
+            signInButton: document.getElementById('signInButton'),
+            signOutButton: document.getElementById('signOutButton'),
+            headerSubtitle: document.getElementById('headerSubtitle'),
 
             // Firebase Config Modal
             firebaseConfigModal: document.getElementById('firebaseConfigModal'),
@@ -419,7 +454,7 @@
             // Month Selector
             monthSelector: document.getElementById('monthSelector'),
 
-            // (NEW) History Chart
+            // History Chart
             historyChartCanvas: document.getElementById('actualsChart'),
 
             // Income
@@ -537,31 +572,45 @@
                 
                 updateDateInfo();
 
+                // (MODIFIED) Auth State Change Handler
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
-                        console.log("User authenticated (anon):", user.uid);
+                        // User is signed in
+                        console.log("User authenticated:", user.uid, user.displayName);
                         userId = user.uid;
                         isAuthReady = true;
-                        collectionPath = `artifacts/${appId}/users/${userId}/monthlyFinance`;
+                        collectionPath = `artifacts/${appId}/users/${userId}/monthlyFinance`; // Path is now user-specific
+
+                        // Show App, Hide Login
+                        ui.loading.classList.add('hidden');
+                        ui.signInScreen.classList.add('hidden');
+                        ui.appContainer.classList.remove('hidden');
+                        ui.signOutButton.classList.remove('hidden');
+                        ui.headerSubtitle.textContent = `Welcome, ${user.displayName || 'User'}!`;
                         
-                        // New flow: Populate selector, which then loads data
                         await populateMonthSelector();
-                        // (NEW) Load graph data on initial load
                         await fetchAndRenderHistoryGraph();
                         
                     } else {
-                        console.log("No user signed in, attempting anonymous sign-in...");
-                        try {
-                            // Only use signInAnonymously for deployable version
-                            await signInAnonymously(auth);
-                        } catch (authError) {
-                            console.error("Error signing in anonymously:", authError);
-                            if (authError.code === 'auth/operation-not-allowed') {
-                                ui.loading.textContent = "Error: Anonymous sign-in not enabled in your Firebase project.";
-                            } else {
-                                ui.loading.textContent = "Error: Failed to authenticate.";
-                            }
+                        // User is signed out
+                        console.log("No user signed in.");
+                        isAuthReady = false;
+                        userId = null;
+                        
+                        // Hide App, Show Login
+                        ui.loading.classList.add('hidden');
+                        ui.appContainer.classList.add('hidden');
+                        ui.signOutButton.classList.add('hidden');
+                        ui.signInScreen.classList.remove('hidden');
+                        ui.headerSubtitle.textContent = "Track your budget vs. actual spending.";
+
+                        // Clear any old data
+                        if (unsubscribeSnapshot) unsubscribeSnapshot();
+                        if (historyChart) {
+                            historyChart.destroy();
+                            historyChart = null;
                         }
+                        ui.monthSelector.innerHTML = '';
                     }
                 });
 
@@ -665,10 +714,24 @@
         function formatMonthId(monthId) {
             const [year, month] = monthId.split('-').map(Number);
             const date = new Date(year, month - 1);
+            // Use 'short' for month for brevity in chart labels
+            const shortFormat = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+            if (monthId.length > 7) return shortFormat; // safety
+            // Use 'long' for the selector
             return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        }
+        
+        function formatMonthIdForChart(monthId) {
+             const [year, month] = monthId.split('-').map(Number);
+            const date = new Date(year, month - 1);
+            return date.toLocaleDateString('en-US', { month: 'short' }); // e.g., "Nov"
         }
 
         function addEventListeners() {
+            // (NEW) Auth Listeners
+            ui.signInButton.addEventListener('click', signInWithGoogle);
+            ui.signOutButton.addEventListener('click', signOutUser);
+
             // Month Selector
             ui.monthSelector.addEventListener('change', handleMonthChange);
 
@@ -704,6 +767,32 @@
             ui.closeImportModalBtn.addEventListener('click', () => ui.importModal.classList.add('hidden'));
             ui.confirmImportBtn.addEventListener('click', confirmImport);
         }
+
+        // --- (NEW) Auth Functions ---
+        async function signInWithGoogle() {
+            const provider = new GoogleAuthProvider();
+            try {
+                ui.signInButton.disabled = true;
+                ui.signInButton.textContent = "Signing in...";
+                await signInWithPopup(auth, provider);
+                // onAuthStateChanged will handle the rest
+            } catch (error) {
+                console.error("Error signing in with Google:", error);
+                alert("Error signing in. Please try again. Make sure popups are enabled.");
+                ui.signInButton.disabled = false;
+                ui.signInButton.innerHTML = `<ion-icon name="logo-google" class="text-xl"></ion-icon><span>Sign in with Google</span>`;
+            }
+        }
+
+        async function signOutUser() {
+            try {
+                await signOut(auth);
+                // onAuthStateChanged will handle the rest
+            } catch (error) {
+                console.error("Error signing out:", error);
+            }
+        }
+
 
         /**
          * Handles changing the month selector.
@@ -800,7 +889,7 @@
                 return;
             }
 
-            // (NEW) Calculate previous month's actual surplus/deficit
+            // (MODIFIED) Calculate previous month's actual surplus/deficit
             const prevActualIncome = (prevData.incomeItems || []).reduce((sum, item) => sum + (item.actual || 0), 0);
             const prevActualExpense = (prevData.expenseLog || []).reduce((sum, log) => sum + (log.amount || 0), 0);
             const prevActualSurplus = prevActualIncome - prevActualExpense;
@@ -826,11 +915,14 @@
             // Populate Expense List
             ui.importExpenseList.innerHTML = ''; // Always clear first
 
-            // (NEW) Add surplus/deficit as the first item
+            // (MODIFIED) Add surplus/deficit as the first item
             if (prevActualSurplus !== 0) {
                 const isSurplus = prevActualSurplus > 0;
-                const name = isSurplus ? "Sisa Bulan Lalu (Dana Tambahan)" : "Defisit Bulan Lalu (Beban)";
-                const amount = isSurplus ? -prevActualSurplus : Math.abs(prevActualSurplus); // Surplus is negative expense
+                // (MODIFIED) Logic for surplus/deficit as expense
+                // Surplus (sisa dana) > 0. Ini PENGURANG budget expense. Amount = negatif.
+                // Deficit (beban) < 0. Ini PENAMBAH budget expense. Amount = positif.
+                const name = isSurplus ? "Sisa Dana Bulan Lalu (Pengurang Biaya)" : "Defisit Bulan Lalu (Beban Biaya)";
+                const amount = isSurplus ? -prevActualSurplus : Math.abs(prevActualSurplus);
                 
                 const el = document.createElement('div');
                 el.className = "flex items-center space-x-2";
@@ -845,6 +937,10 @@
             // (MODIFIED) Add the rest of the expense budgets
             if (prevData.expenseBudgets && prevData.expenseBudgets.length > 0) {
                 prevData.expenseBudgets.forEach(item => {
+                    // (NEW) Don't re-import old surplus/deficit items
+                    if (item.name.toLowerCase().includes("sisa dana") || item.name.toLowerCase().includes("defisit")) {
+                        return;
+                    }
                     const el = document.createElement('div');
                     el.className = "flex items-center space-x-2";
                     el.innerHTML = `
@@ -864,7 +960,6 @@
 
         /**
          * Confirms the import, reading from the modal and saving data.
-         * (No changes needed, it's already generic)
          */
         async function confirmImport() {
             const newIncomeItems = [];
@@ -875,8 +970,11 @@
             checkboxes.forEach(box => {
                 const parent = box.parentElement;
                 const name = box.dataset.name;
-                const amount = parseFloat(parent.querySelector('.import-amount').value) || 0;
+                const amount = parseFloat(parent.querySelector('.import-amount').value);
                 
+                // Don't import if amount is not a number
+                if (isNaN(amount)) return;
+
                 const newItem = {
                     id: crypto.randomUUID(),
                     name: name,
@@ -1075,7 +1173,7 @@
                             <span>Remaining:</span>
                             ${formatSelisih(item.actual || 0, item.amount, 'expense')}
                         </div>
-                        ${dailyAdvice > 0 ? `
+                        ${(dailyAdvice > 0 && item.amount > 0) ? `
                         <div class="flex justify-between text-xs text-blue-600 pt-1 border-t mt-1">
                             <span>${adviceText}</span>
                             <span class="font-medium">${formatCurrency(dailyAdvice)} / day</span>
@@ -1210,7 +1308,7 @@
         function manageExpenseBudget() {
             const name = ui.fixedItemName.value.trim();
             const amount = parseFloat(ui.fixedItemAmount.value);
-            if (!name || isNaN(amount) || amount <= 0) {
+            if (name === "" || isNaN(amount)) {
                 alert("Please enter a valid name and amount.");
                 return;
             }
@@ -1436,7 +1534,7 @@
             el.classList.remove('hidden');
         }
 
-        // --- (NEW) History Graph Functions ---
+        // --- History Graph Functions ---
 
         /**
          * Fetches data for the last 12 months and renders the history graph.
@@ -1453,7 +1551,7 @@
 
             for (let i = 0; i < 12; i++) {
                 const monthId = date.toISOString().slice(0, 7);
-                labels.push(formatMonthId(monthId));
+                labels.push(formatMonthIdForChart(monthId)); // Use short format for chart
                 
                 const docSnap = await getDoc(doc(db, collectionPath, monthId));
                 
