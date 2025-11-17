@@ -70,6 +70,45 @@
         </div>
     </div>
 
+    <!-- Modal for Importing Budget -->
+    <div id="importModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4 hidden">
+        <div class="bg-white p-6 rounded-xl shadow-2xl max-w-lg w-full">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold text-gray-800">Import Budget</h2>
+                <button id="closeImportModalBtn" class="text-gray-400 hover:text-gray-600">
+                    <ion-icon name="close-circle-outline" class="text-3xl"></ion-icon>
+                </button>
+            </div>
+            <p class="text-gray-600 mb-4">Review items from last month. Uncheck items you don't want and edit amounts as needed.</p>
+            
+            <div class="max-h-[60vh] overflow-y-auto space-y-4 pr-2">
+                <!-- Income Import Section -->
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-700 mb-2 border-b pb-1">Budgeted Income</h3>
+                    <div id="importIncomeList" class="space-y-2">
+                        <!-- JS will populate this -->
+                        <p class="text-gray-500 text-sm">No income budget found from last month.</p>
+                    </div>
+                </div>
+                
+                <!-- Expense Import Section -->
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-700 mb-2 border-b pb-1">Budgeted Expenses</h3>
+                    <div id="importExpenseList" class="space-y-2">
+                        <!-- JS will populate this -->
+                        <p class="text-gray-500 text-sm">No expense budget found from last month.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-6">
+                <button id="confirmImportBtn" class="w-full bg-green-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-green-700 transition duration-300">
+                    Confirm and Import Items
+                </button>
+            </div>
+        </div>
+    </div>
+
     <div class="container mx-auto max-w-md p-4 min-h-screen bg-gray-100">
         
         <!-- Header -->
@@ -78,6 +117,14 @@
             <p class="text-gray-600">Track your budget vs. actual spending.</p>
         </header>
 
+        <!-- (NEW) Month Selector -->
+        <section class="mb-4">
+            <label for="monthSelector" class="block text-sm font-medium text-gray-700 mb-1">Viewing Data For:</label>
+            <select id="monthSelector" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm">
+                <!-- JS will populate this -->
+            </select>
+        </section>
+
         <!-- Loading Indicator -->
         <div id="loading" class="text-center p-4">
             <p class="text-gray-500">Loading data...</p>
@@ -85,6 +132,14 @@
 
         <!-- App Content (Hidden until auth is ready) -->
         <main id="app-content" class="hidden space-y-6">
+
+            <!-- (NEW) Import Button container -->
+            <section id="import-container" class="hidden">
+                <button id="openImportModalBtn" class="w-full bg-blue-100 text-blue-700 font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-blue-200 transition duration-300 flex items-center justify-center space-x-2">
+                    <ion-icon name="download-outline" class="text-xl"></ion-icon>
+                    <span>Import Budget from Last Month</span>
+                </button>
+            </section>
 
             <!-- 1. Manage Income -->
             <section class="bg-white p-5 rounded-xl shadow-lg">
@@ -291,7 +346,7 @@
         // Import Firebase functions
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot, updateDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, onSnapshot, updateDoc, setLogLevel, getDocs, collection, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- Firebase Config (Deployable Mode) ---
         let firebaseConfig = {};
@@ -301,9 +356,12 @@
         let app, auth, db, userId, docRef, isAuthReady = false;
         let unsubscribeSnapshot = null;
         let daysInMonth, remainingDays;
+        let currentMonthId; // e.g., "2025-11"
+        let collectionPath;
 
         // --- App State ---
         const state = {
+            selectedMonth: "", // The month currently being viewed
             incomeItems: [], // { id, name, amount (budget), actual }
             expenseBudgets: [], // { id, name, amount (budget), actual }
             expenseLog: [], // { id, categoryId, name, amount, date }
@@ -337,6 +395,18 @@
             actualIncomeAmount: document.getElementById('actualIncomeAmount'),
             saveActualIncomeBtn: document.getElementById('saveActualIncomeBtn'),
             closeActualIncomeModalBtn: document.getElementById('closeActualIncomeModalBtn'),
+
+            // Import Modal
+            importModal: document.getElementById('importModal'),
+            closeImportModalBtn: document.getElementById('closeImportModalBtn'),
+            importIncomeList: document.getElementById('importIncomeList'),
+            importExpenseList: document.getElementById('importExpenseList'),
+            confirmImportBtn: document.getElementById('confirmImportBtn'),
+            importContainer: document.getElementById('import-container'),
+            openImportModalBtn: document.getElementById('openImportModalBtn'),
+
+            // Month Selector
+            monthSelector: document.getElementById('monthSelector'),
 
             // Income
             incomeItemName: document.getElementById('incomeItemName'),
@@ -410,9 +480,16 @@
         
         function updateDateInfo() {
             const today = new Date();
+            currentMonthId = today.toISOString().slice(0, 7); // "YYYY-MM"
             daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
             remainingDays = daysInMonth - today.getDate() + 1;
-            console.log(`Days in month: ${daysInMonth}, Remaining days: ${remainingDays}`);
+            console.log(`Current Month ID: ${currentMonthId}, Days in month: ${daysInMonth}, Remaining days: ${remainingDays}`);
+        }
+
+        function getPreviousMonthId(monthId) {
+            const [year, month] = monthId.split('-').map(Number);
+            const prevDate = new Date(year, month - 1, 0); // Day 0 of current month = last day of previous
+            return prevDate.toISOString().slice(0, 7);
         }
 
         // --- Main App Functions ---
@@ -451,7 +528,11 @@
                         console.log("User authenticated (anon):", user.uid);
                         userId = user.uid;
                         isAuthReady = true;
-                        await loadData();
+                        collectionPath = `artifacts/${appId}/users/${userId}/monthlyFinance`;
+                        
+                        // New flow: Populate selector, which then loads data
+                        await populateMonthSelector();
+                        
                     } else {
                         console.log("No user signed in, attempting anonymous sign-in...");
                         try {
@@ -472,7 +553,6 @@
 
             } catch (error) {
                 console.error("Error initializing Firebase:", error);
-                // Check for common firebase init errors
                 if (error.message.includes("Missing or invalid 'authDomain'")) {
                      ui.loading.innerHTML = `Error: Invalid Firebase config.<br>Please clear local storage and reload.`;
                      localStorage.removeItem('firebaseConfig');
@@ -526,7 +606,56 @@
             }
         }
 
+        /**
+         * (NEW) Fetches all existing month documents to populate the selector.
+         */
+        async function populateMonthSelector() {
+            if (!isAuthReady) return;
+
+            try {
+                const querySnapshot = await getDocs(collection(db, collectionPath));
+                let monthIds = querySnapshot.docs.map(doc => doc.id);
+                
+                // Ensure current month is always an option
+                if (!monthIds.includes(currentMonthId)) {
+                    monthIds.push(currentMonthId);
+                }
+                
+                // Sort descending
+                monthIds.sort().reverse(); 
+                
+                ui.monthSelector.innerHTML = '';
+                monthIds.forEach(monthId => {
+                    const option = document.createElement('option');
+                    option.value = monthId;
+                    option.textContent = formatMonthId(monthId);
+                    ui.monthSelector.appendChild(option);
+                });
+                
+                // Set selector to current month and load its data
+                ui.monthSelector.value = currentMonthId;
+                state.selectedMonth = currentMonthId;
+                await loadData(); // Load data for the default (current) month
+                
+            } catch (error) {
+                console.error("Error populating month selector:", error);
+                ui.loading.textContent = "Error loading month list.";
+            }
+        }
+
+        /**
+         * (NEW) Formats "2025-11" to "November 2025"
+         */
+        function formatMonthId(monthId) {
+            const [year, month] = monthId.split('-').map(Number);
+            const date = new Date(year, month - 1);
+            return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        }
+
         function addEventListeners() {
+            // Month Selector
+            ui.monthSelector.addEventListener('change', handleMonthChange);
+
             // Manage Income
             ui.addIncomeItemBtn.addEventListener('click', manageIncomeItem);
             ui.deleteAllIncomeBtn.addEventListener('click', () => deleteAllItems('incomeItems'));
@@ -553,66 +682,186 @@
             // Actual Income Modal
             ui.saveActualIncomeBtn.addEventListener('click', saveActualIncome);
             ui.closeActualIncomeModalBtn.addEventListener('click', () => ui.actualIncomeModal.classList.add('hidden'));
+
+            // Import Modal
+            ui.openImportModalBtn.addEventListener('click', openImportModal);
+            ui.closeImportModalBtn.addEventListener('click', () => ui.importModal.classList.add('hidden'));
+            ui.confirmImportBtn.addEventListener('click', confirmImport);
         }
 
-        function handleListClick(e, type) {
-            const deleteBtn = e.target.closest('.delete-btn');
-            const editBtn = e.target.closest('.edit-btn');
-            const logActualBtn = e.target.closest('.log-actual-btn');
-            
-            if (deleteBtn) {
-                const id = deleteBtn.dataset.id;
-                if (type === 'dynamic') type = 'expenseLog'; // Remap type
-                deleteItem(type, id);
-            } else if (editBtn) {
-                const id = editBtn.dataset.id;
-                if (type === 'dynamic') type = 'expenseLog'; // Remap type
-                startEdit(type, id);
-            } else if (logActualBtn) {
-                const id = logActualBtn.dataset.id;
-                openActualIncomeModal(id);
-            }
+        /**
+         * (NEW) Handles changing the month selector.
+         */
+        async function handleMonthChange() {
+            state.selectedMonth = ui.monthSelector.value;
+            console.log(`Month changed to: ${state.selectedMonth}`);
+            await loadData();
         }
 
+        /**
+         * (MODIFIED) Loads data for the currently selected month.
+         */
         async function loadData() {
-            if (!isAuthReady || !userId) {
-                console.warn("loadData called before auth is ready.");
+            if (!isAuthReady || !userId || !state.selectedMonth) {
+                console.warn("loadData called before auth or month selection is ready.");
                 return;
             }
 
-            if (unsubscribeSnapshot) unsubscribeSnapshot();
+            // --- CRITICAL: Unsubscribe from old listener ---
+            if (unsubscribeSnapshot) {
+                console.log("Unsubscribing from old snapshot listener.");
+                unsubscribeSnapshot();
+                unsubscribeSnapshot = null;
+            }
 
-            const docId = new Date().toISOString().slice(0, 7); // "YYYY-MM"
-            // Use generic 'appId' for path, as user provides their own config
-            const collectionPath = `artifacts/${appId}/users/${userId}/monthlyFinance`;
-            docRef = doc(db, collectionPath, docId);
-            console.log(`Listening to doc: ${collectionPath}/${docId}`);
+            docRef = doc(db, collectionPath, state.selectedMonth);
+            console.log(`Listening to doc: ${collectionPath}/${state.selectedMonth}`);
 
-            ui.loading.classList.add('hidden');
-            ui.appContent.classList.remove('hidden');
+            ui.loading.classList.remove('hidden'); // Show loading when changing months
+            ui.appContent.classList.add('hidden');
 
             unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
+                ui.loading.classList.add('hidden');
+                ui.appContent.classList.remove('hidden');
+
                 if (docSnap.exists()) {
                     console.log("Data loaded:", docSnap.data());
                     const data = docSnap.data();
                     state.incomeItems = data.incomeItems || [];
-                    // Migration: old `fixedSpendingItems` becomes `expenseBudgets`
                     state.expenseBudgets = data.expenseBudgets || data.fixedSpendingItems || []; 
-                    // Migration: old `dynamicExpenses` becomes `expenseLog`
                     state.expenseLog = data.expenseLog || data.dynamicExpenses || []; 
                 } else {
-                    console.log("No such document! Initializing state.");
+                    console.log("No such document! Initializing empty state for this month.");
                     state.incomeItems = [];
                     state.expenseBudgets = [];
                     state.expenseLog = [];
                 }
+                
                 // Recalculate actuals from log
                 recalculateBudgetActuals();
                 updateUI();
+                updateImportButtonVisibility(); // Check if import button should show
             }, (error) => {
                 console.error("Error listening to document:", error);
+                ui.loading.textContent = "Error loading data for this month.";
             });
         }
+        
+        /**
+         * (NEW) Shows/hides the import button based on context.
+         */
+        function updateImportButtonVisibility() {
+            const isCurrentMonth = (state.selectedMonth === currentMonthId);
+            const isBudgetEmpty = (state.incomeItems.length === 0 && state.expenseBudgets.length === 0);
+            
+            if (isCurrentMonth && isBudgetEmpty) {
+                ui.importContainer.classList.remove('hidden');
+            } else {
+                ui.importContainer.classList.add('hidden');
+            }
+        }
+
+        /**
+         * (NEW) Opens the import modal and fetches previous month's data.
+         */
+        async function openImportModal() {
+            const prevMonthId = getPreviousMonthId(state.selectedMonth);
+            console.log(`Fetching data for import from: ${prevMonthId}`);
+            
+            const prevDocRef = doc(db, collectionPath, prevMonthId);
+            let prevData;
+
+            try {
+                const docSnap = await getDoc(prevDocRef);
+                if (!docSnap.exists()) {
+                    alert("No data found for the previous month to import.");
+                    return;
+                }
+                prevData = docSnap.data();
+            } catch (error) {
+                console.error("Error fetching previous month data:", error);
+                alert("Could not load previous month's data.");
+                return;
+            }
+
+            // Populate Income List
+            if (prevData.incomeItems && prevData.incomeItems.length > 0) {
+                ui.importIncomeList.innerHTML = '';
+                prevData.incomeItems.forEach(item => {
+                    const el = document.createElement('div');
+                    el.className = "flex items-center space-x-2";
+                    el.innerHTML = `
+                        <input type="checkbox" data-type="income" data-name="${item.name}" value="${item.amount}" class="import-check h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500" checked>
+                        <label class="flex-1 text-gray-700">${item.name}</label>
+                        <input type="number" value="${item.amount}" class="import-amount w-32 px-2 py-1 border border-gray-300 rounded-md text-sm">
+                    `;
+                    ui.importIncomeList.appendChild(el);
+                });
+            } else {
+                ui.importIncomeList.innerHTML = '<p class="text-gray-500 text-sm">No income budget found from last month.</p>';
+            }
+
+            // Populate Expense List
+            if (prevData.expenseBudgets && prevData.expenseBudgets.length > 0) {
+                ui.importExpenseList.innerHTML = '';
+                prevData.expenseBudgets.forEach(item => {
+                    const el = document.createElement('div');
+                    el.className = "flex items-center space-x-2";
+                    el.innerHTML = `
+                        <input type="checkbox" data-type="expense" data-name="${item.name}" value="${item.amount}" class="import-check h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500" checked>
+                        <label class="flex-1 text-gray-700">${item.name}</label>
+                        <input type="number" value="${item.amount}" class="import-amount w-32 px-2 py-1 border border-gray-300 rounded-md text-sm">
+                    `;
+                    ui.importExpenseList.appendChild(el);
+                });
+            } else {
+                 ui.importExpenseList.innerHTML = '<p class="text-gray-500 text-sm">No expense budget found from last month.</p>';
+            }
+
+            ui.importModal.classList.remove('hidden');
+        }
+
+        /**
+         * (NEW) Confirms the import, reading from the modal and saving data.
+         */
+        async function confirmImport() {
+            const newIncomeItems = [];
+            const newExpenseBudgets = [];
+
+            const checkboxes = ui.importModal.querySelectorAll('.import-check:checked');
+            
+            checkboxes.forEach(box => {
+                const parent = box.parentElement;
+                const name = box.dataset.name;
+                const amount = parseFloat(parent.querySelector('.import-amount').value) || 0;
+                
+                const newItem = {
+                    id: crypto.randomUUID(),
+                    name: name,
+                    amount: amount,
+                    actual: 0 // Always reset actual
+                };
+                
+                if (box.dataset.type === 'income') {
+                    newIncomeItems.push(newItem);
+                } else {
+                    newExpenseBudgets.push(newItem);
+                }
+            });
+
+            console.log("Importing new items:", newIncomeItems, newExpenseBudgets);
+            
+            // Add to existing state (which should be empty, but this is safer)
+            state.incomeItems = [...state.incomeItems, ...newIncomeItems];
+            state.expenseBudgets = [...state.expenseBudgets, ...newExpenseBudgets];
+
+            // Save the new data
+            await saveData();
+
+            ui.importModal.classList.add('hidden');
+            // The onSnapshot listener will automatically update the UI
+        }
+
         
         /**
          * Recalculates all 'actual' fields in expenseBudgets based on the expenseLog.
@@ -669,6 +918,23 @@
             
             // 7. Update Prediction Help Text
             updatePredictionHelpText();
+
+            // 8. Disable/Enable inputs based on month
+            const isCurrent = state.selectedMonth === currentMonthId;
+            const sectionsToDisable = [
+                ...document.querySelectorAll('#app-content section:not(#monthSelector):not(#import-container) input'),
+                ...document.querySelectorAll('#app-content section:not(#monthSelector):not(#import-container) button'),
+                ...document.querySelectorAll('#app-content section:not(#monthSelector):not(#import-container) select')
+            ];
+            
+            sectionsToDisable.forEach(el => {
+                el.disabled = !isCurrent;
+                if (!isCurrent) {
+                    el.classList.add('opacity-70', 'cursor-not-allowed');
+                } else {
+                    el.classList.remove('opacity-70', 'cursor-not-allowed');
+                }
+            });
         }
 
         function renderIncomeList(listElement, items) {
@@ -727,7 +993,8 @@
                 li.className = 'p-3 bg-gray-50 rounded-lg shadow-sm';
                 
                 const remainingBudget = (item.amount || 0) - (item.actual || 0);
-                const dailyAdvice = (remainingDays > 0) ? (remainingBudget / remainingDays) : 0;
+                const dailyAdvice = (remainingDays > 0 && state.selectedMonth === currentMonthId) ? (remainingBudget / remainingDays) : 0;
+                const adviceText = (state.selectedMonth === currentMonthId) ? `Daily Advice (Rest of Month):` : `Daily Advice (For ${state.selectedMonth}):`;
                 
                 li.innerHTML = `
                     <div class="flex justify-between items-center mb-2">
@@ -754,10 +1021,11 @@
                             <span>Remaining:</span>
                             ${formatSelisih(item.actual || 0, item.amount, 'expense')}
                         </div>
+                        ${dailyAdvice > 0 ? `
                         <div class="flex justify-between text-xs text-blue-600 pt-1 border-t mt-1">
-                            <span>Daily Advice (Rest of Month):</span>
+                            <span>${adviceText}</span>
                             <span class="font-medium">${formatCurrency(dailyAdvice)} / day</span>
-                        </div>
+                        </div>` : ''}
                     </div>
                 `;
                 listElement.appendChild(li);
@@ -808,7 +1076,7 @@
             ui.expenseCategorySelect.innerHTML += '<option value="other">Other (Unbudgeted)</option>';
         }
 
-        async function saveData(dataToSave) {
+        async function saveData() {
             if (!docRef) {
                 console.error("docRef is not initialized. Cannot save.");
                 return;
@@ -820,7 +1088,8 @@
                     expenseBudgets: state.expenseBudgets,
                     expenseLog: state.expenseLog
                 };
-                await setDoc(docRef, fullState, { merge: false }); // Use false merge to overwrite, cleaner
+                // Use setDoc to create or overwrite the doc for the selected month
+                await setDoc(docRef, fullState, { merge: false }); // merge: false ensures it overwrites/creates
                 console.log("Data saved:", fullState);
             } catch (error) {
                 console.error("Error saving data:", error);
@@ -828,6 +1097,8 @@
         }
 
         // --- Item Management Functions ---
+        // (Semua fungsi di bawah ini sekarang akan secara otomatis
+        // bekerja pada 'state' dan 'docRef' untuk bulan yang dipilih)
 
         function manageIncomeItem() {
             const name = ui.incomeItemName.value.trim();
