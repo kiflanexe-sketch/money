@@ -424,7 +424,8 @@
         
         // Save Status Timer
         let saveTimeout;
-        let isSaving = false; // (NEW) Flag to prevent race conditions
+        let isSaving = false; // Flag to prevent race conditions
+        let pendingSave = null; // Queue for pending saves
 
         // --- App State ---
         const state = {
@@ -572,7 +573,7 @@
             return prevDate.toISOString().slice(0, 7);
         }
 
-        // --- (NEW) Save Status Handler ---
+        // --- Save Status Handler ---
         function updateSaveStatus(status, message) {
             if (saveTimeout) clearTimeout(saveTimeout);
             
@@ -580,35 +581,33 @@
             bar.classList.remove('hidden', 'status-unsaved', 'status-saving', 'status-saved', 'status-error');
             
             switch(status) {
-                case 'unsaved': // This status is no longer used, but kept for logic
+                case 'unsaved':
                     bar.classList.add('status-unsaved');
                     bar.textContent = message || "Unsaved changes...";
                     break;
                 case 'saving':
-                    isSaving = true; // (NEW)
+                    isSaving = true;
                     bar.classList.add('status-saving');
                     bar.textContent = message || "Saving...";
                     break;
                 case 'saved':
-                    isSaving = false; // (NEW)
+                    isSaving = false;
                     bar.classList.add('status-saved');
                     bar.textContent = message || "All changes saved.";
                     // Hide after a delay
                     saveTimeout = setTimeout(() => {
-                        // Only hide if we are still 'saved' and not saving again
                         if (!isSaving) {
                            bar.classList.add('hidden');
                         }
-                    }, 2000); // Hide after 2 seconds
+                    }, 2000);
                     break;
                 case 'error':
-                    isSaving = false; // (NEW)
+                    isSaving = false;
                     bar.classList.add('status-error');
                     bar.textContent = message || "Error: Failed to save.";
-                    // Don't hide error
                     break;
                 case 'hidden':
-                    isSaving = false; // (NEW)
+                    isSaving = false;
                     bar.classList.add('hidden');
                     break;
             }
@@ -624,97 +623,84 @@
                     ui.loading.classList.add('hidden');
                     ui.firebaseConfigModal.classList.remove('hidden');
                     ui.saveConfigBtn.addEventListener('click', saveConfig);
-                    return; // Stop init, wait for user input
+                    return;
                 }
                 
                 try {
                     firebaseConfig = JSON.parse(savedConfig);
                 } catch (e) {
-                    localStorage.removeItem('firebaseConfig'); // Remove bad config
+                    localStorage.removeItem('firebaseConfig');
                     ui.loading.textContent = "Error: Invalid config. Reloading.";
                     location.reload();
                     return;
                 }
 
-                // --- (FIX) CRITICAL: Extract appId from config ---
+                // --- FIXED: Properly extract appId from config ---
                 if (!firebaseConfig || !firebaseConfig.appId) {
                     console.error("Config missing or invalid (missing appId). Forcing re-config.");
-                    localStorage.removeItem('firebaseConfig'); // Hapus config lama yang buruk
+                    localStorage.removeItem('firebaseConfig');
                     ui.loading.classList.add('hidden');
                     ui.configError.textContent = "Your config is outdated (missing appId). Please paste it again.";
                     ui.firebaseConfigModal.classList.remove('hidden');
                     ui.configError.classList.remove('hidden');
                     ui.saveConfigBtn.addEventListener('click', saveConfig);
-                    return; // Stop init
+                    return;
                 }
-                appId = firebaseConfig.appId; // <-- THE FIX
+                appId = firebaseConfig.appId;
                 console.log("Using correct appId:", appId);
-                // --- End Config Check ---
 
                 app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
                 setLogLevel('Debug');
                 
-                // --- ATTEMPT TO ENABLE OFFLINE PERSISTENCE ---
+                // --- Enable Offline Persistence ---
                 try {
                     await enableIndexedDbPersistence(db); 
                     console.log("Offline persistence enabled.");
                 } catch (error) {
                     if (error.code == 'failed-precondition') {
-                        // This happens if multiple tabs are open.
-                        console.warn("Firestore persistence failed (failed-precondition). Likely multiple tabs open. App will work online.");
-                        alert("Offline mode failed to start (multiple tabs may be open). The app will run in 'online-only' mode. Saving may be slow on unstable connections.");
+                        console.warn("Firestore persistence failed (failed-precondition). Likely multiple tabs open.");
                     } else if (error.code == 'unimplemented') {
-                        // Browser not supported
                         console.warn("Firestore persistence failed (unimplemented). Browser not supported for offline mode.");
-                        alert("Offline mode is not supported by this browser. The app will run in 'online-only' mode.");
                     }
                 }
-                // --- End of persistence block ---
                 
                 updateDateInfo();
 
                 // Auth State Change Handler
                 onAuthStateChanged(auth, async (user) => {
-                    updateSaveStatus('hidden'); // Hide status bar on auth change
+                    updateSaveStatus('hidden');
                     if (user) {
-                        // User is signed in
                         console.log("User authenticated:", user.uid, user.displayName);
                         userId = user.uid;
                         isAuthReady = true;
                         collectionPath = `artifacts/${appId}/users/${userId}/monthlyFinance`;
                         console.log("Database path set to:", collectionPath);
 
-                        // Show App, Hide Login
                         ui.loading.classList.remove('hidden');
                         ui.signInScreen.classList.add('hidden');
                         ui.appContainer.classList.remove('hidden');
                         ui.signOutButton.classList.remove('hidden');
                         ui.headerSubtitle.textContent = `Welcome, ${user.displayName || 'User'}!`;
                         
-                        // Performance Fix: Load current month data FIRST
                         state.selectedMonth = currentMonthId;
-                        await loadData(); // Wait for primary data
+                        await loadData();
                         
-                        // Then load secondary data in background
                         populateMonthSelectorList();
                         fetchAndRenderHistoryGraph();
                         
                     } else {
-                        // User is signed out
                         console.log("No user signed in.");
                         isAuthReady = false;
                         userId = null;
                         
-                        // Hide App, Show Login
                         ui.loading.classList.add('hidden');
                         ui.appContainer.classList.add('hidden');
                         ui.signOutButton.classList.add('hidden');
                         ui.signInScreen.classList.remove('hidden');
                         ui.headerSubtitle.textContent = "Track your budget vs. actual spending.";
 
-                        // Clear any old data
                         if (unsubscribeSnapshot) unsubscribeSnapshot();
                         if (historyChart) {
                             historyChart.destroy();
@@ -740,7 +726,6 @@
         function saveConfig() {
             const configString = ui.firebaseConfigInput.value;
             try {
-                // Find the start and end of the object
                 const startIndex = configString.indexOf('{');
                 const endIndex = configString.lastIndexOf('}');
                 
@@ -748,13 +733,9 @@
                     throw new Error("Could not find { and } in the config.");
                 }
 
-                // Extract just the object string
                 let objectString = configString.substring(startIndex, endIndex + 1);
-
-                // Use new Function() for safe evaluation of the JS object string
                 const configObject = new Function('return (' + objectString + ')')();
 
-                // Validate the resulting object
                 if (!configObject || !configObject.apiKey || !configObject.authDomain || !configObject.appId) {
                     throw new Error('Config object is invalid or missing "apiKey", "authDomain", or "appId".');
                 }
@@ -815,7 +796,7 @@
         function formatMonthIdForChart(monthId) {
              const [year, month] = monthId.split('-').map(Number);
             const date = new Date(year, month - 1);
-            return date.toLocaleDateString('en-US', { month: 'short' }); // e.g., "Nov"
+            return date.toLocaleDateString('en-US', { month: 'short' });
         }
 
         function addEventListeners() {
@@ -866,7 +847,6 @@
                 ui.signInButton.disabled = true;
                 ui.signInButton.textContent = "Signing in...";
                 await signInWithPopup(auth, provider);
-                // onAuthStateChanged will handle the rest
             } catch (error) {
                 console.error("Error signing in with Google:", error);
                 alert("Error signing in. Please try again. Make sure popups are enabled and your domain is authorized in Firebase.");
@@ -878,12 +858,10 @@
         async function signOutUser() {
             try {
                 await signOut(auth);
-                // onAuthStateChanged will handle the rest
             } catch (error) {
                 console.error("Error signing out:", error);
             }
         }
-
 
         async function handleMonthChange() {
             state.selectedMonth = ui.monthSelector.value;
@@ -891,7 +869,7 @@
             await loadData();
         }
 
-        // --- (NEW) REBUILT loadData() function ---
+        // --- FIXED: Improved loadData with better error handling ---
         async function loadData() {
             if (!isAuthReady || !userId || !state.selectedMonth) {
                 console.warn("loadData called before auth or month selection is ready.");
@@ -918,7 +896,6 @@
                 ui.monthSelector.value = state.selectedMonth;
             }
 
-            // (NEW) This is now the "brain" of the save status
             unsubscribeSnapshot = onSnapshot(docRef, { includeMetadataChanges: true }, (docSnap) => {
                 ui.loading.classList.add('hidden');
                 ui.appContent.classList.remove('hidden');
@@ -926,7 +903,6 @@
                 const source = docSnap.metadata.fromCache ? "local cache" : "server";
                 console.log(`Snapshot received from ${source}. Pending writes: ${docSnap.metadata.hasPendingWrites}`);
                 
-                // (NEW) Update Save Status based on snapshot metadata
                 if (docSnap.metadata.hasPendingWrites) {
                     updateSaveStatus('saving', 'Syncing changes...');
                 } else {
@@ -951,7 +927,7 @@
             }, (error) => {
                 console.error("Error listening to document:", error);
                 ui.loading.textContent = "Error loading data for this month.";
-                updateSaveStatus('error', 'Error loading data.'); // Show error
+                updateSaveStatus('error', 'Error loading data.');
             });
         }
         
@@ -1009,7 +985,7 @@
             }
 
             // Populate Expense List
-            ui.importExpenseList.innerHTML = ''; // Always clear first
+            ui.importExpenseList.innerHTML = '';
 
             if (prevActualSurplus !== 0) {
                 const isSurplus = prevActualSurplus > 0;
@@ -1048,7 +1024,6 @@
         }
 
         function confirmImport() {
-            // updateSaveStatus('unsaved'); // (NEW) This is no longer needed
             const newIncomeItems = [];
             const newExpenseBudgets = [];
 
@@ -1080,17 +1055,15 @@
             state.incomeItems = [...state.incomeItems, ...newIncomeItems];
             state.expenseBudgets = [...state.expenseBudgets, ...newExpenseBudgets];
 
-            updateUI(); // <-- (FIX 1) OPTIMISTIC UI UPDATE
-            saveData(); // (FIX 2) This function is now non-blocking
+            updateUI();
+            saveData();
             ui.importModal.classList.add('hidden');
         }
 
         
         function recalculateBudgetActuals() {
-            // Reset actuals to 0 before recalculating
             state.expenseBudgets.forEach(item => item.actual = 0);
             
-            // Sum expense log into budget categories
             state.expenseLog.forEach(log => {
                 const budgetItem = state.expenseBudgets.find(b => b.id === log.categoryId);
                 if (budgetItem) {
@@ -1099,15 +1072,14 @@
             });
         }
 
-
         function updateUI() {
             // 1. Recalculate all totals from state
             state.totalBudgetIncome = state.incomeItems.reduce((sum, item) => sum + (item.amount || 0), 0);
             state.totalActualIncome = state.incomeItems.reduce((sum, item) => sum + (item.actual || 0), 0);
             
-            recalculateBudgetActuals(); // Recalculate expense budget actuals from log
+            recalculateBudgetActuals();
             state.totalBudgetExpense = state.expenseBudgets.reduce((sum, item) => sum + (item.amount || 0), 0);
-            state.totalActualExpense = state.expenseLog.reduce((sum, log) => sum + (log.amount || 0), 0); // This is the true total
+            state.totalActualExpense = state.expenseLog.reduce((sum, log) => sum + (log.amount || 0), 0);
             
             state.budgetedSurplus = state.totalBudgetIncome - state.totalBudgetExpense;
             state.actualSurplus = state.totalActualIncome - state.totalActualExpense;
@@ -1120,7 +1092,7 @@
 
             // 3. Update DOM - Expense Budgets
             ui.totalBudgetExpense.textContent = formatCurrency(state.totalBudgetExpense);
-            ui.totalActualExpense.textContent = formatCurrency(state.totalActualExpense); // Show the true total
+            ui.totalActualExpense.textContent = formatCurrency(state.totalActualExpense);
             ui.totalExpenseSelisih.innerHTML = formatSelisih(state.totalActualExpense, state.totalBudgetExpense, 'expense');
             renderBudgetList(ui.fixedSpendingList, state.expenseBudgets);
             
@@ -1150,21 +1122,18 @@
             const monthSelector = document.getElementById('monthSelector');
             
             allInputs.forEach(el => {
-                if (el === monthSelector) return; // Month selector is always enabled
+                if (el === monthSelector) return;
 
-                // Check if element is inside any of the modals
                 const isInsideModal = el.closest('#firebaseConfigModal') || 
                                       el.closest('#actualIncomeModal') || 
                                       el.closest('#importModal');
                 
-                // If it's inside a modal, it should always be enabled
                 if (isInsideModal) {
                     el.disabled = false;
                     el.classList.remove('opacity-70', 'cursor-not-allowed');
                     return;
                 }
 
-                // Otherwise, disable/enable based on the selected month
                 el.disabled = !isCurrent;
                 if (!isCurrent) {
                     el.classList.add('opacity-70', 'cursor-not-allowed');
@@ -1233,7 +1202,6 @@
                 const dailyAdvice = (remainingDays > 0 && state.selectedMonth === currentMonthId) ? (remainingBudget / remainingDays) : 0;
                 const adviceText = (state.selectedMonth === currentMonthId) ? `Daily Advice (Rest of Month):` : `Daily Advice (For ${state.selectedMonth}):`;
                 
-                // Only show advice if it's positive and for the current month
                 const showAdvice = (dailyAdvice > 0 && item.amount > 0 && state.selectedMonth === currentMonthId);
 
                 li.innerHTML = `
@@ -1241,10 +1209,10 @@
                         <span class="font-medium text-gray-800">${item.name}</span>
                         <div class="flex space-x-2">
                             <button data-id="${item.id}" class="edit-btn text-blue-500 hover:text-blue-700 p-1 rounded-full">
-                                <ion-icon name="create-outline" class="text-xl pointer-events-none"></ion-inject>
+                                <ion-icon name="create-outline" class="text-xl pointer-events-none"></ion-icon>
                             </button>
                             <button data-id="${item.id}" class="delete-btn text-red-500 hover:text-red-700 p-1 rounded-full">
-                                <ion-icon name="trash-outline" class="text-xl pointer-events-none"></ion-inject>
+                                <ion-icon name="trash-outline" class="text-xl pointer-events-none"></ion-icon>
                             </button>
                         </div>
                     </div>
@@ -1308,7 +1276,6 @@
         function populateCategoryDropdown() {
             ui.expenseCategorySelect.innerHTML = '<option value="">-- Select Category --</option>';
             state.expenseBudgets.forEach(cat => {
-                // Don't include the 'surplus/deficit' item as a selectable category
                 if (cat.name.toLowerCase().includes("sisa dana") || cat.name.toLowerCase().includes("defisit")) {
                     return;
                 }
@@ -1320,15 +1287,12 @@
             ui.expenseCategorySelect.innerHTML += '<option value="other">Other (Unbudgeted)</option>';
         }
 
-        // --- (NEW) REBUILT Save Data (non-blocking) ---
+        // --- FIXED: Improved saveData with queue mechanism ---
         function saveData() { 
             if (!docRef) {
                 console.error("docRef is not initialized. Cannot save.");
                 return;
             }
-
-            // (NEW) Don't update status here. The snapshot listener will.
-            // updateSaveStatus('saving'); 
 
             const fullState = {
                 incomeItems: state.incomeItems,
@@ -1336,15 +1300,31 @@
                 expenseLog: state.expenseLog
             };
             
-            // This is "fire-and-forget" to the local cache.
-            // The onSnapshot listener will catch the "pending write"
-            // and update the status to "Saving..."
+            // Queue save operation if one is already in progress
+            if (isSaving) {
+                pendingSave = fullState;
+                return;
+            }
+
             setDoc(docRef, fullState, { merge: false })
                 .then(() => {
-                    // This now confirms write *to the server*
                     console.log("Data successfully synced to server.");
-                    // We can re-fetch the graph *after* save is confirmed
-                    fetchAndRenderHistoryGraph(); 
+                    fetchAndRenderHistoryGraph();
+                    
+                    // Process any pending save
+                    if (pendingSave) {
+                        const nextSave = pendingSave;
+                        pendingSave = null;
+                        setDoc(docRef, nextSave, { merge: false })
+                            .then(() => {
+                                console.log("Pending save completed.");
+                                fetchAndRenderHistoryGraph();
+                            })
+                            .catch((error) => {
+                                console.error("Error saving pending data:", error);
+                                updateSaveStatus('error', `Error: Failed to save pending data.`);
+                            });
+                    }
                 })
                 .catch((error) => {
                     console.error("CRITICAL: Error saving data:", error);
@@ -1354,7 +1334,7 @@
                 });
         }
 
-        // --- (NEW) REBUILT Item Management Functions (Optimistic UI) ---
+        // --- Item Management Functions ---
 
         function manageIncomeItem() {
             const name = ui.incomeItemName.value.trim();
@@ -1364,7 +1344,6 @@
                 return;
             }
 
-            // (NEW) No status update here
             if (state.editingIncomeId) {
                 state.incomeItems = state.incomeItems.map(item => 
                     item.id === state.editingIncomeId ? { ...item, name, amount } : item
@@ -1374,8 +1353,8 @@
                 state.incomeItems.push(newItem);
             }
             
-            updateUI(); // <-- (FIX 1) OPTIMISTIC UI UPDATE
-            saveData(); // (FIX 2) This is now non-blocking
+            updateUI();
+            saveData();
             cancelEdit('income');
         }
         
@@ -1401,10 +1380,9 @@
             
             const item = state.incomeItems.find(i => i.id === id);
             if (item) {
-                // (NEW) No status update here
                 item.actual = amount;
-                updateUI(); // <-- (FIX 1) OPTIMISTIC UI UPDATE
-                saveData(); // (FIX 2) This is now non-blocking
+                updateUI();
+                saveData();
             }
             ui.actualIncomeModal.classList.add('hidden');
         }
@@ -1417,7 +1395,6 @@
                 return;
             }
 
-            // (NEW) No status update here
             if (state.editingFixedId) {
                 state.expenseBudgets = state.expenseBudgets.map(item => 
                     item.id === state.editingFixedId ? { ...item, name, amount } : item
@@ -1427,8 +1404,8 @@
                 state.expenseBudgets.push(newItem);
             }
             
-            updateUI(); // <-- (FIX 1) OPTIMISTIC UI UPDATE
-            saveData(); // (FIX 2) This is now non-blocking
+            updateUI();
+            saveData();
             cancelEdit('fixed');
         }
 
@@ -1446,7 +1423,6 @@
                 return;
             }
 
-            // (NEW) No status update here
             if (state.editingDynamicId) {
                 state.expenseLog = state.expenseLog.map(item => 
                     item.id === state.editingDynamicId ? { ...item, categoryId, name, amount } : item
@@ -1456,8 +1432,8 @@
                 state.expenseLog.push(newItem);
             }
             
-            updateUI(); // <-- (FIX 1) OPTIMISTIC UI UPDATE
-            saveData(); // (FIX 2) This is now non-blocking
+            updateUI();
+            saveData();
             cancelEdit('dynamic');
         }
 
@@ -1468,11 +1444,10 @@
             else if (type === 'expenseLog') stateArrayKey = 'expenseLog';
             else return;
 
-            // (NEW) No status update here
             state[stateArrayKey] = state[stateArrayKey].filter(item => item.id !== id);
             
-            updateUI(); // <-- (FIX 1) OPTIMISTIC UI UPDATE
-            saveData(); // (FIX 2) This is now non-blocking
+            updateUI();
+            saveData();
         }
 
         async function deleteAllItems(key) {
@@ -1482,14 +1457,12 @@
             else if (key === 'expenseLog') stateArrayKey = 'expenseLog';
             else return;
 
-            // (NEW) No status update here
             state[stateArrayKey] = [];
             
-            updateUI(); // <-- (FIX 1) OPTIMISTIC UI UPDATE
-            saveData(); // (FIX 2) This is now non-blocking
+            updateUI();
+            saveData();
         }
 
-        // --- startEdit and cancelEdit functions remain the same ---
         function startEdit(type, id) {
             let stateArray, nameInput, amountInput, editingIdKey, addBtn, cancelBtn, categoryInput;
 
@@ -1639,7 +1612,7 @@
             const labels = [];
             const docRefs = [];
             
-            let date = new Date(currentMonthId + "-01T12:00:00Z"); // Use Z to ensure UTC
+            let date = new Date(currentMonthId + "-01T12:00:00Z");
 
             for (let i = 0; i < 12; i++) {
                 const monthId = date.toISOString().slice(0, 7);
@@ -1648,16 +1621,14 @@
                 date.setMonth(date.getMonth() - 1);
             }
             
-            labels.reverse(); // Now labels are in chronological order
+            labels.reverse();
             
             try {
-                // Run all 12 fetches in parallel
                 const docSnaps = await Promise.all(docRefs);
                 
                 const incomeData = [];
                 const expenseData = [];
 
-                // Process snaps (which are currently in reverse-chrono order)
                 docSnaps.forEach(docSnap => {
                     if (docSnap.exists()) {
                         const data = docSnap.data();
@@ -1671,7 +1642,6 @@
                     }
                 });
 
-                // Reverse the data arrays to match the chronological labels
                 incomeData.reverse();
                 expenseData.reverse();
                 
@@ -1682,7 +1652,6 @@
                 console.error("Error fetching history graph data:", error);
             }
         }
-
 
         function renderHistoryGraph(labels, incomeData, expenseData) {
             if (historyChart) {
@@ -1698,7 +1667,7 @@
                         {
                             label: 'Actual Income',
                             data: incomeData,
-                            borderColor: 'rgb(37, 99, 235)', // blue-600
+                            borderColor: 'rgb(37, 99, 235)',
                             backgroundColor: 'rgba(37, 99, 235, 0.1)',
                             fill: true,
                             tension: 0.1
@@ -1706,7 +1675,7 @@
                         {
                             label: 'Actual Expense',
                             data: expenseData,
-                            borderColor: 'rgb(220, 38, 38)', // red-600
+                            borderColor: 'rgb(220, 38, 38)',
                             backgroundColor: 'rgba(220, 38, 38, 0.1)',
                             fill: true,
                             tension: 0.1
@@ -1750,7 +1719,7 @@
                     id = deleteBtn.dataset.id;
                     deleteItem('income', id);
                 }
-            } else if (type === 'fixed') { // 'expenseBudgets'
+            } else if (type === 'fixed') {
                 const editBtn = e.target.closest('.edit-btn');
                 const deleteBtn = e.target.closest('.delete-btn');
                 
@@ -1761,7 +1730,7 @@
                     id = deleteBtn.dataset.id;
                     deleteItem('fixed', id);
                 }
-            } else if (type === 'dynamic') { // 'expenseLog'
+            } else if (type === 'dynamic') {
                 const editBtn = e.target.closest('.edit-btn');
                 const deleteBtn = e.target.closest('.delete-btn');
                 
