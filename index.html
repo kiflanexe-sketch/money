@@ -40,15 +40,7 @@
             background-color: #f3f4f6; /* gray-100 */
         }
 
-        /* (NEW) Masonry layout for desktop */
-        @media (min-width: 768px) { /* md breakpoint */
-            #app-content > section {
-                /* Prevent cards from breaking apart across columns */
-                break-inside: avoid;
-                /* Add margin to replace the mobile space-y */
-                margin-bottom: 1.5rem; /* = gap-6 */
-            }
-        }
+        /* (FIX) Removed @media query for masonry layout, as we are now using grid */
     </style>
 </head>
 <body class="bg-gray-100">
@@ -218,10 +210,21 @@
                 </select>
             </section>
 
-            <!-- (FIX) Apply multi-column layout on desktop -->
-            <main id="app-content" class="space-y-6 md:columns-2 md:gap-6 md:space-y-0 lg:columns-3">
-                <!-- 2. Financial Dashboard -->
-                <section class="bg-white p-5 rounded-xl shadow-lg">
+            <!-- (FIX) Apply CSS Grid layout on desktop, removed columns -->
+            <main id="app-content" class="space-y-6 md:grid md:grid-cols-2 md:gap-6 lg:grid-cols-3">
+                
+                <!-- 3. History Graph (MOVED UP & WIDENED) -->
+                <!-- (FIX) Added md:col-span-2 and lg:col-span-3 -->
+                <section class="bg-white p-5 rounded-xl shadow-lg md:col-span-2 lg:col-span-3">
+                    <h2 class="text-xl font-semibold mb-4 text-gray-800 border-b pb-2">History (Last 12 Months)</h2>
+                    <div class="relative h-64">
+                        <canvas id="actualsChart"></canvas>
+                    </div>
+                </section>
+                
+                <!-- 2. Financial Dashboard (WIDENED) -->
+                <!-- (FIX) Added md:col-span-2 and lg:col-span-2 -->
+                <section class="bg-white p-5 rounded-xl shadow-lg md:col-span-2 lg:col-span-2">
                     <h2 class="text-xl font-semibold mb-4 text-gray-800 border-b pb-2">Financial Dashboard</h2>
                     <div class="space-y-4">
                         <!-- Budgeted View -->
@@ -245,15 +248,7 @@
                     </div>
                 </section>
 
-                <!-- 3. History Graph -->
-                <section class="bg-white p-5 rounded-xl shadow-lg">
-                    <h2 class="text-xl font-semibold mb-4 text-gray-800 border-b pb-2">History (Last 12 Months)</h2>
-                    <div class="relative h-64">
-                        <canvas id="actualsChart"></canvas>
-                    </div>
-                </section>
-
-                <!-- 4. Expense Predictor -->
+                <!-- 4. Expense Predictor (Will now sit next to Dashboard on lg screens) -->
                 <section class="bg-white p-5 rounded-xl shadow-lg">
                     <h2 class="text-xl font-semibold mb-4 text-gray-800 border-b pb-2">Expense Predictor</h2>
                     
