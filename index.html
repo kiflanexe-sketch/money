@@ -656,9 +656,12 @@
                     if (error.code == 'failed-precondition') {
                         // This happens if multiple tabs are open.
                         console.warn("Firestore persistence failed (failed-precondition). Likely multiple tabs open. App will work online.");
+                        // (NEW) ALERT THE USER
+                        alert("Offline mode failed to start (multiple tabs may be open). The app will run in 'online-only' mode. Saving may be slow on unstable connections.");
                     } else if (error.code == 'unimplemented') {
                         // Browser not supported
                         console.warn("Firestore persistence failed (unimplemented). Browser not supported for offline mode.");
+                        alert("Offline mode is not supported by this browser. The app will run in 'online-only' mode.");
                     }
                 }
                 // --- End of persistence block ---
@@ -1060,8 +1063,8 @@
             state.incomeItems = [...state.incomeItems, ...newIncomeItems];
             state.expenseBudgets = [...state.expenseBudgets, ...newExpenseBudgets];
 
-            await saveData();
-
+            updateUI(); // <-- (FIX 1) OPTIMISTIC UI UPDATE
+            saveData(); // (FIX 2) This function is now non-blocking
             ui.importModal.classList.add('hidden');
         }
 
@@ -1300,46 +1303,42 @@
             ui.expenseCategorySelect.innerHTML += '<option value="other">Other (Unbudgeted)</option>';
         }
 
-        // --- (MODIFIED) Save Data with Status Feedback ---
-        async function saveData() {
+        // --- (FIX #2) MODIFIED Save Data (non-blocking) ---
+        function saveData() { // No longer needs to be async
             if (!docRef) {
                 console.error("docRef is not initialized. Cannot save.");
                 return;
             }
 
-            // (NEW) Show saving status
             updateSaveStatus('saving');
 
-            try {
-                const fullState = {
-                    incomeItems: state.incomeItems,
-                    expenseBudgets: state.expenseBudgets,
-                    expenseLog: state.expenseLog
-                };
-                
-                // (BEHAVIOR CHANGE) This 'await' will now resolve IMMEDIATELY
-                // by writing to the local IndexedDB (thanks to the fix in init()).
-                // It no longer waits for the internet.
-                await setDoc(docRef, fullState, { merge: false });
-                console.log("Data saved (locally first):", fullState);
-
-                // (NEW) Show saved status
-                updateSaveStatus('saved');
-
-                // Syncing to the cloud will happen automatically in the background.
-                fetchAndRenderHistoryGraph(); 
-
-            } catch (error) {
-                console.error("CRITICAL: Error saving data:", error);
-                
-                // (NEW) Show error status AND alert the user
-                const errorMessage = `Error: Failed to save data. (${error.code || error.message})`;
-                updateSaveStatus('error', errorMessage);
-                alert(errorMessage + "\n\nPlease check your internet connection or Firebase permissions. Your last change was NOT saved.");
-            }
+            const fullState = {
+                incomeItems: state.incomeItems,
+                expenseBudgets: state.expenseBudgets,
+                expenseLog: state.expenseLog
+            };
+            
+            // (FIX #2) Do NOT await. Let it run in the background.
+            // This is "fire-and-forget".
+            setDoc(docRef, fullState, { merge: false })
+                .then(() => {
+                    console.log("Data save confirmed (local or cloud):");
+                    updateSaveStatus('saved');
+                    // We can re-fetch the graph *after* save is confirmed
+                    fetchAndRenderHistoryGraph(); 
+                })
+                .catch((error) => {
+                    console.error("CRITICAL: Error saving data:", error);
+                    const errorMessage = `Error: Failed to save data. (${error.code || error.message})`;
+                    updateSaveStatus('error', errorMessage);
+                    alert(errorMessage + "\n\nPlease check your internet connection or Firebase permissions. Your last change was NOT saved.");
+                });
+            
+            // We no longer call fetchAndRenderHistoryGraph here
+            // because saveData returns instantly. We moved it to the .then() block.
         }
 
-        // --- Item Management Functions (with 'unsaved' status) ---
+        // --- (FIX #1) Item Management Functions (Optimistic UI) ---
 
         function manageIncomeItem() {
             const name = ui.incomeItemName.value.trim();
@@ -1359,7 +1358,8 @@
                 state.incomeItems.push(newItem);
             }
             
-            saveData(); // This will handle 'saving' and 'saved'
+            updateUI(); // <-- (FIX #1) OPTIMISTIC UI UPDATE
+            saveData(); // (FIX #2) This is now non-blocking
             cancelEdit('income');
         }
         
@@ -1387,7 +1387,8 @@
             if (item) {
                 updateSaveStatus('unsaved'); // (NEW)
                 item.actual = amount;
-                saveData();
+                updateUI(); // <-- (FIX #1) OPTIMISTIC UI UPDATE
+                saveData(); // (FIX #2) This is now non-blocking
             }
             ui.actualIncomeModal.classList.add('hidden');
         }
@@ -1410,7 +1411,8 @@
                 state.expenseBudgets.push(newItem);
             }
             
-            saveData();
+            updateUI(); // <-- (FIX #1) OPTIMISTIC UI UPDATE
+            saveData(); // (FIX #2) This is now non-blocking
             cancelEdit('fixed');
         }
 
@@ -1438,8 +1440,9 @@
                 state.expenseLog.push(newItem);
             }
             
-            recalculateBudgetActuals();
-            saveData();
+            // recalculateBudgetActuals(); // This is called by updateUI()
+            updateUI(); // <-- (FIX #1) OPTIMISTIC UI UPDATE
+            saveData(); // (FIX #2) This is now non-blocking
             cancelEdit('dynamic');
         }
 
@@ -1453,11 +1456,12 @@
             updateSaveStatus('unsaved'); // (NEW)
             state[stateArrayKey] = state[stateArrayKey].filter(item => item.id !== id);
             
-            if (type === 'expenseLog') {
-                recalculateBudgetActuals();
-            }
+            // if (type === 'expenseLog') {
+            //     recalculateBudgetActuals(); // This is called by updateUI()
+            // }
             
-            saveData();
+            updateUI(); // <-- (FIX #1) OPTIMISTIC UI UPDATE
+            saveData(); // (FIX #2) This is now non-blocking
         }
 
         async function deleteAllItems(key) {
@@ -1470,13 +1474,15 @@
             updateSaveStatus('unsaved'); // (NEW)
             state[stateArrayKey] = [];
             
-            if (key === 'expenseLog') {
-                state.expenseBudgets.forEach(item => item.actual = 0);
-            }
+            // if (key === 'expenseLog') {
+            //     state.expenseBudgets.forEach(item => item.actual = 0); // This is handled by recalculateBudgetActuals()
+            // }
             
-            saveData();
+            updateUI(); // <-- (FIX #1) OPTIMISTIC UI UPDATE
+            saveData(); // (FIX #2) This is now non-blocking
         }
 
+        // ... startEdit and cancelEdit functions remain the same ...
         function startEdit(type, id) {
             let stateArray, nameInput, amountInput, editingIdKey, addBtn, cancelBtn, categoryInput;
 
