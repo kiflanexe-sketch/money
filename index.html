@@ -396,7 +396,7 @@
             signInWithPopup, 
             signOut 
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        // (NEW) Import enableIndexedDbPersistence
+        // Import Firestore functions
         import { 
             getFirestore, 
             doc, 
@@ -407,7 +407,7 @@
             getDocs, 
             collection, 
             getDoc,
-            enableIndexedDbPersistence // <-- IMPORT THE FIX
+            enableIndexedDbPersistence 
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- Firebase Config (Deployable Mode) ---
@@ -422,7 +422,7 @@
         let historyChart = null; // Chart instance
         let unsubscribeSnapshot = null;
         
-        // (NEW) Save Status Timer
+        // Save Status Timer
         let saveTimeout;
 
         // --- App State ---
@@ -461,7 +461,7 @@
             configError: document.getElementById('configError'),
             saveConfigBtn: document.getElementById('saveConfigBtn'),
             
-            // (NEW) Save Status
+            // Save Status
             saveStatusBar: document.getElementById('saveStatusBar'),
 
             // Actual Income Modal
@@ -571,7 +571,7 @@
             return prevDate.toISOString().slice(0, 7);
         }
 
-        // --- (NEW) Save Status Handler ---
+        // --- Save Status Handler ---
         function updateSaveStatus(status, message) {
             if (saveTimeout) clearTimeout(saveTimeout);
             
@@ -648,15 +648,14 @@
                 auth = getAuth(app);
                 setLogLevel('Debug');
                 
-                // --- (NEW) ATTEMPT TO ENABLE OFFLINE PERSISTENCE ---
+                // --- ATTEMPT TO ENABLE OFFLINE PERSISTENCE ---
                 try {
-                    await enableIndexedDbPersistence(db); // <-- THE FIX
+                    await enableIndexedDbPersistence(db); 
                     console.log("Offline persistence enabled.");
                 } catch (error) {
                     if (error.code == 'failed-precondition') {
                         // This happens if multiple tabs are open.
                         console.warn("Firestore persistence failed (failed-precondition). Likely multiple tabs open. App will work online.");
-                        // (NEW) ALERT THE USER
                         alert("Offline mode failed to start (multiple tabs may be open). The app will run in 'online-only' mode. Saving may be slow on unstable connections.");
                     } else if (error.code == 'unimplemented') {
                         // Browser not supported
@@ -670,7 +669,7 @@
 
                 // Auth State Change Handler
                 onAuthStateChanged(auth, async (user) => {
-                    updateSaveStatus('hidden'); // (NEW) Hide status bar on auth change
+                    updateSaveStatus('hidden'); // Hide status bar on auth change
                     if (user) {
                         // User is signed in
                         console.log("User authenticated:", user.uid, user.displayName);
@@ -901,7 +900,7 @@
 
             ui.loading.classList.remove('hidden');
             ui.appContent.classList.add('hidden');
-            updateSaveStatus('hidden'); // (NEW) Hide status on load
+            updateSaveStatus('hidden'); // Hide status on load
 
             if (!ui.monthSelector.querySelector(`option[value="${state.selectedMonth}"]`)) {
                 const option = document.createElement('option');
@@ -911,12 +910,17 @@
                 ui.monthSelector.value = state.selectedMonth;
             }
 
-            unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
+            // (NEW) Add includeMetadataChanges: true
+            unsubscribeSnapshot = onSnapshot(docRef, { includeMetadataChanges: true }, (docSnap) => {
                 ui.loading.classList.add('hidden');
                 ui.appContent.classList.remove('hidden');
-
+                
+                // (NEW) Check if data is from server or local cache
+                const source = docSnap.metadata.fromCache ? "local cache" : "server";
+                console.log(`Data loaded from ${source}.`);
+                
                 if (docSnap.exists()) {
-                    console.log("Data loaded:", docSnap.data());
+                    // console.log("Data loaded:", docSnap.data()); // Too noisy
                     const data = docSnap.data();
                     state.incomeItems = data.incomeItems || [];
                     state.expenseBudgets = data.expenseBudgets || data.fixedSpendingItems || []; 
@@ -934,7 +938,7 @@
             }, (error) => {
                 console.error("Error listening to document:", error);
                 ui.loading.textContent = "Error loading data for this month.";
-                updateSaveStatus('error', 'Error loading data.'); // (NEW) Show error
+                updateSaveStatus('error', 'Error loading data.'); // Show error
             });
         }
         
@@ -1030,7 +1034,7 @@
             ui.importModal.classList.remove('hidden');
         }
 
-        async function confirmImport() {
+        function confirmImport() {
             updateSaveStatus('unsaved'); // (NEW)
             const newIncomeItems = [];
             const newExpenseBudgets = [];
@@ -1482,7 +1486,7 @@
             saveData(); // (FIX #2) This is now non-blocking
         }
 
-        // ... startEdit and cancelEdit functions remain the same ...
+        // --- startEdit and cancelEdit functions remain the same ---
         function startEdit(type, id) {
             let stateArray, nameInput, amountInput, editingIdKey, addBtn, cancelBtn, categoryInput;
 
