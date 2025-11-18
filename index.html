@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale-1.0">
     <title>Finance Predictor</title>
     <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -168,8 +168,8 @@
         <!-- App Content (Hidden until auth is ready) -->
         <div id="appContainer" class="hidden"> <!-- Wrapper for main content -->
             
-            <!-- (NEW) Save Status Bar -->
-            <section id="saveStatusBar" class="hidden text-center p-2 rounded-lg mb-4 text-sm font-medium">
+            <!-- (FIX 1: Floating Status Bar) -->
+            <section id="saveStatusBar" class="hidden text-center p-2 rounded-lg mb-4 text-sm font-medium sticky top-4 z-40 shadow-md">
                 <!-- JS will populate this -->
             </section>
 
@@ -979,7 +979,7 @@
                 
                 recalculateBudgetActuals();
                 updateUI();
-                updateImportButtonVisibility();
+                // (FIX 2: Call was removed from here to prevent redundancy)
             }, (error) => {
                 console.error("Error listening to document:", error);
                 ui.loading.textContent = "Error loading data for this month.";
@@ -1176,6 +1176,9 @@
             
             // 7. Update Prediction Help Text
             updatePredictionHelpText();
+            
+            // (FIX 2: Call import button visibility update from here)
+            updateImportButtonVisibility();
 
             // 8. Disable/Enable inputs based on month
             const isCurrent = state.selectedMonth === currentMonthId;
@@ -1526,6 +1529,7 @@
             state[stateArrayKey] = [];
             
             updateUI(); // <-- (FIX 1) OPTIMISTIC UI UPDATE
+            updateImportButtonVisibility(); // (FIX 2: Call update for import button)
             saveData(); // (FIX 2) This is now non-blocking
         }
 
