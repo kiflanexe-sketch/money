@@ -396,7 +396,19 @@
             signInWithPopup, 
             signOut 
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot, updateDoc, setLogLevel, getDocs, collection, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        // (NEW) Import enableIndexedDbPersistence
+        import { 
+            getFirestore, 
+            doc, 
+            setDoc, 
+            onSnapshot, 
+            updateDoc, 
+            setLogLevel, 
+            getDocs, 
+            collection, 
+            getDoc,
+            enableIndexedDbPersistence // <-- IMPORT THE FIX
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- Firebase Config (Deployable Mode) ---
         let firebaseConfig = {};
@@ -635,6 +647,21 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
                 setLogLevel('Debug');
+                
+                // --- (NEW) ATTEMPT TO ENABLE OFFLINE PERSISTENCE ---
+                try {
+                    await enableIndexedDbPersistence(db); // <-- THE FIX
+                    console.log("Offline persistence enabled.");
+                } catch (error) {
+                    if (error.code == 'failed-precondition') {
+                        // This happens if multiple tabs are open.
+                        console.warn("Firestore persistence failed (failed-precondition). Likely multiple tabs open. App will work online.");
+                    } else if (error.code == 'unimplemented') {
+                        // Browser not supported
+                        console.warn("Firestore persistence failed (unimplemented). Browser not supported for offline mode.");
+                    }
+                }
+                // --- End of persistence block ---
                 
                 updateDateInfo();
 
@@ -1040,8 +1067,10 @@
 
         
         function recalculateBudgetActuals() {
+            // Reset actuals to 0 before recalculating
             state.expenseBudgets.forEach(item => item.actual = 0);
             
+            // Sum expense log into budget categories
             state.expenseLog.forEach(log => {
                 const budgetItem = state.expenseBudgets.find(b => b.id === log.categoryId);
                 if (budgetItem) {
@@ -1056,9 +1085,9 @@
             state.totalBudgetIncome = state.incomeItems.reduce((sum, item) => sum + (item.amount || 0), 0);
             state.totalActualIncome = state.incomeItems.reduce((sum, item) => sum + (item.actual || 0), 0);
             
-            recalculateBudgetActuals();
+            recalculateBudgetActuals(); // Recalculate expense budget actuals from log
             state.totalBudgetExpense = state.expenseBudgets.reduce((sum, item) => sum + (item.amount || 0), 0);
-            state.totalActualExpense = state.expenseLog.reduce((sum, log) => sum + (log.amount || 0), 0);
+            state.totalActualExpense = state.expenseLog.reduce((sum, log) => sum + (log.amount || 0), 0); // This is the true total
             
             state.budgetedSurplus = state.totalBudgetIncome - state.totalBudgetExpense;
             state.actualSurplus = state.totalActualIncome - state.totalActualExpense;
@@ -1071,7 +1100,7 @@
 
             // 3. Update DOM - Expense Budgets
             ui.totalBudgetExpense.textContent = formatCurrency(state.totalBudgetExpense);
-            ui.totalActualExpense.textContent = formatCurrency(state.totalActualExpense);
+            ui.totalActualExpense.textContent = formatCurrency(state.totalActualExpense); // Show the true total
             ui.totalExpenseSelisih.innerHTML = formatSelisih(state.totalActualExpense, state.totalBudgetExpense, 'expense');
             renderBudgetList(ui.fixedSpendingList, state.expenseBudgets);
             
@@ -1101,18 +1130,21 @@
             const monthSelector = document.getElementById('monthSelector');
             
             allInputs.forEach(el => {
-                if (el === monthSelector) return;
+                if (el === monthSelector) return; // Month selector is always enabled
 
+                // Check if element is inside any of the modals
                 const isInsideModal = el.closest('#firebaseConfigModal') || 
                                       el.closest('#actualIncomeModal') || 
                                       el.closest('#importModal');
                 
+                // If it's inside a modal, it should always be enabled
                 if (isInsideModal) {
                     el.disabled = false;
                     el.classList.remove('opacity-70', 'cursor-not-allowed');
                     return;
                 }
 
+                // Otherwise, disable/enable based on the selected month
                 el.disabled = !isCurrent;
                 if (!isCurrent) {
                     el.classList.add('opacity-70', 'cursor-not-allowed');
@@ -1181,6 +1213,7 @@
                 const dailyAdvice = (remainingDays > 0 && state.selectedMonth === currentMonthId) ? (remainingBudget / remainingDays) : 0;
                 const adviceText = (state.selectedMonth === currentMonthId) ? `Daily Advice (Rest of Month):` : `Daily Advice (For ${state.selectedMonth}):`;
                 
+                // Only show advice if it's positive and for the current month
                 const showAdvice = (dailyAdvice > 0 && item.amount > 0 && state.selectedMonth === currentMonthId);
 
                 li.innerHTML = `
@@ -1255,6 +1288,10 @@
         function populateCategoryDropdown() {
             ui.expenseCategorySelect.innerHTML = '<option value="">-- Select Category --</option>';
             state.expenseBudgets.forEach(cat => {
+                // Don't include the 'surplus/deficit' item as a selectable category
+                if (cat.name.toLowerCase().includes("sisa dana") || cat.name.toLowerCase().includes("defisit")) {
+                    return;
+                }
                 const option = document.createElement('option');
                 option.value = cat.id;
                 option.textContent = cat.name;
@@ -1280,12 +1317,16 @@
                     expenseLog: state.expenseLog
                 };
                 
+                // (BEHAVIOR CHANGE) This 'await' will now resolve IMMEDIATELY
+                // by writing to the local IndexedDB (thanks to the fix in init()).
+                // It no longer waits for the internet.
                 await setDoc(docRef, fullState, { merge: false });
-                console.log("Data saved:", fullState);
+                console.log("Data saved (locally first):", fullState);
 
                 // (NEW) Show saved status
                 updateSaveStatus('saved');
 
+                // Syncing to the cloud will happen automatically in the background.
                 fetchAndRenderHistoryGraph(); 
 
             } catch (error) {
@@ -1585,7 +1626,7 @@
             const labels = [];
             const docRefs = [];
             
-            let date = new Date(currentMonthId + "-01T12:00:00Z");
+            let date = new Date(currentMonthId + "-01T12:00:00Z"); // Use Z to ensure UTC
 
             for (let i = 0; i < 12; i++) {
                 const monthId = date.toISOString().slice(0, 7);
@@ -1594,14 +1635,16 @@
                 date.setMonth(date.getMonth() - 1);
             }
             
-            labels.reverse();
+            labels.reverse(); // Now labels are in chronological order
             
             try {
+                // Run all 12 fetches in parallel
                 const docSnaps = await Promise.all(docRefs);
                 
                 const incomeData = [];
                 const expenseData = [];
 
+                // Process snaps (which are currently in reverse-chrono order)
                 docSnaps.forEach(docSnap => {
                     if (docSnap.exists()) {
                         const data = docSnap.data();
@@ -1615,6 +1658,7 @@
                     }
                 });
 
+                // Reverse the data arrays to match the chronological labels
                 incomeData.reverse();
                 expenseData.reverse();
                 
@@ -1693,7 +1737,7 @@
                     id = deleteBtn.dataset.id;
                     deleteItem('income', id);
                 }
-            } else if (type === 'fixed') {
+            } else if (type === 'fixed') { // 'expenseBudgets'
                 const editBtn = e.target.closest('.edit-btn');
                 const deleteBtn = e.target.closest('.delete-btn');
                 
