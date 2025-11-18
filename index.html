@@ -29,16 +29,21 @@
         .selisih-negatif { color: #dc2626; /* red-600 */ }
         .selisih-netral { color: #6b7280; /* gray-500 */ }
         
-        /* (NEW) Save Status Bar Styles */
+        /* Save Status Bar Styles */
         .status-unsaved { background-color: #fef9c3; color: #a16207; } /* yellow-100, yellow-700 */
         .status-saving { background-color: #dbeafe; color: #1d4ed8; } /* blue-100, blue-700 */
         .status-saved { background-color: #dcfce7; color: #15803d; } /* green-100, green-700 */
         .status-error { background-color: #fee2e2; color: #b91c1c; } /* red-100, red-700 */
+
+        /* (NEW) Style for past expense suggestions */
+        .suggestion-item:hover {
+            background-color: #f3f4f6; /* gray-100 */
+        }
     </style>
 </head>
 <body class="bg-gray-100">
 
-    <!-- (NEW) Error Modal -->
+    <!-- Error Modal -->
     <div id="errorModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4 hidden">
         <div class="bg-white p-6 rounded-xl shadow-2xl max-w-lg w-full">
             <div class="flex items-center space-x-3 mb-4">
@@ -130,6 +135,27 @@
             </div>
         </div>
     </div>
+    
+    <!-- (NEW) Modal for Past Expense Suggestions -->
+    <div id="pastExpenseModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4 hidden">
+        <div class="bg-white p-6 rounded-xl shadow-2xl max-w-lg w-full">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold text-gray-800">Find Past Expense</h2>
+                <button id="closePastExpenseModalBtn" class="text-gray-400 hover:text-gray-600">
+                    <ion-icon name="close-circle-outline" class="text-3xl"></ion-icon>
+                </button>
+            </div>
+            <p class="text-gray-600 mb-4">Select an expense from last month to auto-fill the form.</p>
+            
+            <input type="search" id="searchPastExpenseInput" placeholder="Search past expenses..." class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 mb-4">
+            
+            <div id="pastExpenseList" class="max-h-[50vh] overflow-y-auto space-y-2 pr-2">
+                <!-- JS will populate this -->
+                <p class="text-gray-500 text-sm">No past expenses found.</p>
+            </div>
+        </div>
+    </div>
+
 
     <div class="container mx-auto max-w-md p-4 min-h-screen bg-gray-100">
         
@@ -181,6 +207,7 @@
                 </select>
             </section>
 
+            <!-- (NEW) RE-ORDERED SECTIONS -->
             <main id="app-content" class="space-y-6">
                 <!-- 2. Financial Dashboard -->
                 <section class="bg-white p-5 rounded-xl shadow-lg">
@@ -264,6 +291,23 @@
                 <!-- 6. Manage Income -->
                 <section class="bg-white p-5 rounded-xl shadow-lg">
                     <h2 class="text-xl font-semibold mb-4 text-gray-800 border-b pb-2">Manage Income (Budget)</h2>
+                    
+                    <!-- (FIX 2: Totals Moved Up) -->
+                    <div class="mt-4 mb-4 pt-4 border-t border-b space-y-2">
+                        <div class="flex justify-between items-center">
+                            <span class="font-medium text-gray-600">Total Budgeted Income:</span>
+                            <span id="totalBudgetIncome" class="font-bold text-gray-800">Rp 0</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="font-medium text-gray-600">Total Actual Income:</span>
+                            <span id="totalActualIncome" class="font-bold text-gray-800">Rp 0</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="font-medium text-gray-600">Selisih (Actual - Budget):</span>
+                            <span id="totalIncomeSelisih" class="font-bold">Rp 0 (0%)</span>
+                        </div>
+                    </div>
+                    
                     <div class="space-y-4">
                         <input type="hidden" id="editingIncomeId">
                         <div>
@@ -283,31 +327,34 @@
                             </button>
                         </div>
                     </div>
-                    <!-- Income List -->
-                    <div id="incomeItemList" class="space-y-3 mt-4 max-h-48 overflow-y-auto">
+                    <!-- (FIX 3: Removed max-h-48 overflow-y-auto) -->
+                    <div id="incomeItemList" class="space-y-3 mt-4">
                         <!-- List filled by JavaScript -->
                     </div>
-                    <!-- Income Totals -->
-                    <div class="mt-4 pt-4 border-t space-y-2">
-                        <div class="flex justify-between items-center">
-                            <span class="font-medium text-gray-600">Total Budgeted Income:</span>
-                            <span id="totalBudgetIncome" class="font-bold text-gray-800">Rp 0</span>
-                        </div>
-                        <div class="flex justify-between items-center">
-                            <span class="font-medium text-gray-600">Total Actual Income:</span>
-                            <span id="totalActualIncome" class="font-bold text-gray-800">Rp 0</span>
-                        </div>
-                        <div class="flex justify-between items-center">
-                            <span class="font-medium text-gray-600">Selisih (Actual - Budget):</span>
-                            <span id="totalIncomeSelisih" class="font-bold">Rp 0 (0%)</span>
-                        </div>
-                    </div>
-                    <button id="deleteAllIncomeBtn" class="w-full text-sm text-red-500 hover:text-red-700 mt-2">Delete All Income Items</button>
+                    <!-- Income Totals (MOVED) -->
+                    <button id="deleteAllIncomeBtn" class="w-full text-sm text-red-500 hover:text-red-700 mt-4 border-t pt-2">Delete All Income Items</button>
                 </section>
                 
                 <!-- 7. Manage Expense Budgets -->
                 <section class="bg-white p-5 rounded-xl shadow-lg">
                     <h2 class="text-xl font-semibold mb-4 text-gray-800 border-b pb-2">Manage Expense Budgets</h2>
+                    
+                    <!-- (FIX 2: Totals Moved Up) -->
+                    <div class="mt-4 mb-4 pt-4 border-t border-b space-y-2">
+                        <div class="flex justify-between items-center">
+                            <span class="font-medium text-gray-600">Total Budgeted Expense:</span>
+                            <span id="totalBudgetExpense" class="font-bold text-gray-800">Rp 0</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="font-medium text-gray-600">Total Actual Expense:</span>
+                            <span id="totalActualExpense" class="font-bold text-gray-800">Rp 0</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="font-medium text-gray-600">Selisih (Budget - Actual):</span>
+                            <span id="totalExpenseSelisih" class="font-bold">Rp 0 (0%)</span>
+                        </div>
+                    </div>
+                    
                     <p class="text-xs text-gray-500 mb-3">Add budget categories (e.g., Food, Transport, Bills).</p>
                     <div class="space-y-4">
                         <input type="hidden" id="editingFixedId">
@@ -328,26 +375,12 @@
                             </button>
                         </div>
                     </div>
-                    <!-- Expense Budget List -->
-                    <div id="fixedSpendingList" class="space-y-3 mt-4 max-h-48 overflow-y-auto">
+                    <!-- (FIX 3: Removed max-h-48 overflow-y-auto) -->
+                    <div id="fixedSpendingList" class="space-y-3 mt-4">
                         <!-- List filled by JavaScript -->
                     </div>
-                    <!-- Expense Totals -->
-                    <div class="mt-4 pt-4 border-t space-y-2">
-                        <div class="flex justify-between items-center">
-                            <span class="font-medium text-gray-600">Total Budgeted Expense:</span>
-                            <span id="totalBudgetExpense" class="font-bold text-gray-800">Rp 0</span>
-                        </div>
-                        <div class="flex justify-between items-center">
-                            <span class="font-medium text-gray-600">Total Actual Expense:</span>
-                            <span id="totalActualExpense" class="font-bold text-gray-800">Rp 0</span>
-                        </div>
-                        <div class="flex justify-between items-center">
-                            <span class="font-medium text-gray-600">Selisih (Budget - Actual):</span>
-                            <span id="totalExpenseSelisih" class="font-bold">Rp 0 (0%)</span>
-                        </div>
-                    </div>
-                    <button id="deleteAllFixedBtn" class="w-full text-sm text-red-500 hover:text-red-700 mt-2">Delete All Budget Categories</button>
+                    <!-- Expense Totals (MOVED) -->
+                    <button id="deleteAllFixedBtn" class="w-full text-sm text-red-500 hover:text-red-700 mt-4 border-t pt-2">Delete All Budget Categories</button>
                 </section>
 
                 <!-- 8. Log Actual Expense -->
@@ -364,10 +397,16 @@
                                 <option value="other">Other (Unbudgeted)</option>
                             </select>
                         </div>
-                        <div>
+                        
+                        <!-- (FIX 1: Add Past Expense Button) -->
+                        <div class="relative">
                             <label for="newDynamicExpenseName" class="block text-sm font-medium text-gray-700 mb-1">Expense Name</label>
                             <input type="text" id="newDynamicExpenseName" placeholder="e.g., Lunch, Coffee, Bus Fare" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                            <button id="findPastExpenseBtn" class="absolute right-2 top-7 text-blue-600 hover:text-blue-800 p-1" title="Find past expense">
+                                <ion-icon name="search-circle-outline" class="text-2xl pointer-events-none"></ion-icon>
+                            </button>
                         </div>
+                        
                         <div>
                             <label for="newDynamicExpenseAmount" class="block text-sm font-medium text-gray-700 mb-1">Amount (IDR)</label>
                             <input type="number" id="newDynamicExpenseAmount" placeholder="e.g., 50000" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
@@ -389,7 +428,13 @@
                         <h2 class="text-xl font-semibold text-gray-800">Expense Log History</h2>
                         <button id="deleteAllDynamicBtn" class="text-sm text-red-500 hover:text-red-700">Delete All</button>
                     </div>
-                    <div id="dynamicExpenseList" class="space-y-3 max-h-60 overflow-y-auto">
+                    
+                    <!-- (FIX 4: Add Search Bar) -->
+                    <div class="mb-4">
+                        <input type="search" id="searchExpenseLog" placeholder="Search by name or category..." class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    
+                    <div id="dynamicExpenseList" class="space-y-3">
                         <!-- List filled by JavaScript -->
                         <p id="emptyListMessage" class="text-gray-500 text-center">No expenses logged yet.</p>
                     </div>
@@ -439,6 +484,9 @@
         // Save Status Timer
         let saveTimeout;
         let isSaving = false; // Flag to prevent race conditions
+        
+        // (NEW) Past expense suggestions cache
+        let pastExpenseSuggestions = [];
 
         // --- App State ---
         const state = {
@@ -502,6 +550,13 @@
             importContainer: document.getElementById('import-container'),
             openImportModalBtn: document.getElementById('openImportModalBtn'),
 
+            // (NEW) Past Expense Modal
+            pastExpenseModal: document.getElementById('pastExpenseModal'),
+            closePastExpenseModalBtn: document.getElementById('closePastExpenseModalBtn'),
+            findPastExpenseBtn: document.getElementById('findPastExpenseBtn'),
+            searchPastExpenseInput: document.getElementById('searchPastExpenseInput'),
+            pastExpenseList: document.getElementById('pastExpenseList'),
+
             // Month Selector
             monthSelector: document.getElementById('monthSelector'),
 
@@ -552,7 +607,10 @@
             cancelEditDynamicBtn: document.getElementById('cancelEditDynamicBtn'),
             editingDynamicId: document.getElementById('editingDynamicId'),
             dynamicExpenseList: document.getElementById('dynamicExpenseList'),
-            deleteAllDynamicBtn: document.getElementById('deleteAllDynamicBtn')
+            deleteAllDynamicBtn: document.getElementById('deleteAllDynamicBtn'),
+            
+            // (NEW) Expense Log Search
+            searchExpenseLog: document.getElementById('searchExpenseLog')
         };
 
         // --- Helper Functions ---
@@ -879,6 +937,18 @@
             ui.deleteAllDynamicBtn.addEventListener('click', () => deleteAllItems('expenseLog'));
             ui.cancelEditDynamicBtn.addEventListener('click', () => cancelEdit('dynamic'));
             ui.dynamicExpenseList.addEventListener('click', (e) => handleListClick(e, 'dynamic'));
+            
+            // (NEW) Past Expense Listeners
+            ui.findPastExpenseBtn.addEventListener('click', openPastExpenseModal);
+            ui.closePastExpenseModalBtn.addEventListener('click', () => ui.pastExpenseModal.classList.add('hidden'));
+            ui.searchPastExpenseInput.addEventListener('input', renderPastExpenseList); // Filter as user types
+            ui.pastExpenseList.addEventListener('click', handlePastExpenseClick); // Event delegation for list items
+
+            // (NEW) Expense Log Search
+            ui.searchExpenseLog.addEventListener('input', () => {
+                // Just re-render this specific list
+                renderExpenseLog(ui.dynamicExpenseList, state.expenseLog, 'No expenses logged yet.');
+            });
 
             // Actual Income Modal
             ui.saveActualIncomeBtn.addEventListener('click', saveActualIncome);
@@ -1118,6 +1188,103 @@
             ui.importModal.classList.add('hidden');
         }
 
+        // (NEW) Past Expense Modal Functions
+        async function openPastExpenseModal() {
+            const prevMonthId = getPreviousMonthId(state.selectedMonth);
+            console.log(`Fetching past expenses from: ${prevMonthId}`);
+            ui.pastExpenseList.innerHTML = '<p class="text-gray-500 text-sm">Loading past expenses...</p>';
+            ui.searchPastExpenseInput.value = ''; // Clear search
+            ui.pastExpenseModal.classList.remove('hidden');
+
+            const prevDocRef = doc(db, collectionPath, prevMonthId);
+            let prevData;
+            try {
+                const docSnap = await getDoc(prevDocRef);
+                if (!docSnap.exists()) {
+                    ui.pastExpenseList.innerHTML = '<p class="text-gray-500 text-sm">No data found from last month.</p>';
+                    pastExpenseSuggestions = [];
+                    return;
+                }
+                prevData = docSnap.data();
+            } catch (error) {
+                console.error("Error fetching previous month data:", error);
+                showErrorModal("Load Error", "Could not load previous month's expense log.");
+                ui.pastExpenseList.innerHTML = '<p class="text-red-500 text-sm">Error loading data.</p>';
+                return;
+            }
+
+            const pastExpenses = prevData.expenseLog || [];
+            if (pastExpenses.length === 0) {
+                ui.pastExpenseList.innerHTML = '<p class="text-gray-500 text-sm">No expenses logged last month.</p>';
+                pastExpenseSuggestions = [];
+                return;
+            }
+
+            // Create a unique list
+            const uniqueExpenses = [];
+            const seen = new Set();
+            pastExpenses.forEach(item => {
+                const key = `${item.name}|${item.categoryId}`;
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    uniqueExpenses.push(item);
+                }
+            });
+            
+            pastExpenseSuggestions = uniqueExpenses;
+            renderPastExpenseList();
+        }
+        
+        function renderPastExpenseList() {
+            const listEl = ui.pastExpenseList;
+            const searchTerm = ui.searchPastExpenseInput.value.toLowerCase();
+            
+            const filtered = pastExpenseSuggestions.filter(item => 
+                item.name.toLowerCase().includes(searchTerm)
+            );
+            
+            if (filtered.length === 0) {
+                listEl.innerHTML = '<p class="text-gray-500 text-sm">No matching expenses found.</p>';
+                return;
+            }
+            
+            listEl.innerHTML = '';
+            filtered.sort((a, b) => a.name.localeCompare(b.name)); // Sort alphabetically
+            
+            filtered.forEach(item => {
+                const category = state.expenseBudgets.find(c => c.id === item.categoryId);
+                const categoryName = category ? category.name : (item.categoryId === 'other' ? 'Other' : 'Uncategorized');
+                
+                const div = document.createElement('div');
+                div.className = 'p-3 rounded-lg cursor-pointer suggestion-item flex justify-between items-center';
+                div.dataset.name = item.name;
+                div.dataset.categoryId = item.categoryId;
+                
+                div.innerHTML = `
+                    <div>
+                        <span class="font-medium text-gray-800">${item.name}</span>
+                        <span class="block text-sm text-gray-500">${categoryName}</span>
+                    </div>
+                    <ion-icon name="add-circle-outline" class="text-xl text-blue-600"></ion-icon>
+                `;
+                listEl.appendChild(div);
+            });
+        }
+        
+        function handlePastExpenseClick(e) {
+            const itemEl = e.target.closest('.suggestion-item');
+            if (!itemEl) return;
+            
+            const name = itemEl.dataset.name;
+            const categoryId = itemEl.dataset.categoryId;
+            
+            if (name && categoryId) {
+                ui.newDynamicExpenseName.value = name;
+                ui.expenseCategorySelect.value = categoryId;
+                ui.pastExpenseModal.classList.add('hidden');
+                ui.newDynamicExpenseAmount.focus(); // Focus on the amount
+            }
+        }
         
         function recalculateBudgetActuals() {
             // Reset actuals to 0 before recalculating
@@ -1125,9 +1292,24 @@
             
             // Sum expense log into budget categories
             state.expenseLog.forEach(log => {
-                const budgetItem = state.expenseBudgets.find(b => b.id === log.categoryId);
+                // Find by ID, but also by name for 'Other' (which might have a different ID)
+                let budgetItem = state.expenseBudgets.find(b => b.id === log.categoryId);
+                
+                // Handle 'Other' category
+                if (log.categoryId === 'other' && !budgetItem) {
+                    // Find or create a temporary 'Other' budget item for calculation
+                    budgetItem = state.expenseBudgets.find(b => b.id === 'other' || b.name.toLowerCase() === 'other');
+                    if (!budgetItem) {
+                         // This shouldn't really happen, but as a fallback
+                         log.categoryId = 'other';
+                    }
+                }
+                
                 if (budgetItem) {
                     budgetItem.actual += (log.amount || 0);
+                } else if (log.categoryId === 'other') {
+                    // If 'Other' isn't in state.expenseBudgets, we should still account for it
+                    // But for this app structure, we'll rely on the log itself
                 }
             });
         }
@@ -1142,6 +1324,25 @@
             state.totalBudgetExpense = state.expenseBudgets.reduce((sum, item) => sum + (item.amount || 0), 0);
             state.totalActualExpense = state.expenseLog.reduce((sum, log) => sum + (log.amount || 0), 0); // This is the true total
             
+            // Recalculate actual for 'Other' category if it exists
+            const otherActual = state.expenseLog
+                .filter(log => log.categoryId === 'other')
+                .reduce((sum, log) => sum + (log.amount || 0), 0);
+            
+            // Find 'Other' in budget list and update its 'actual'
+            let otherBudget = state.expenseBudgets.find(b => b.id === 'other' || b.name.toLowerCase() === 'other');
+            if (otherBudget) {
+                otherBudget.actual = otherActual;
+            } else if (otherActual > 0) {
+                // If 'Other' isn't a budget item but has expenses, create a temporary one for the list
+                state.expenseBudgets.push({
+                    id: 'other',
+                    name: 'Other (Unbudgeted)',
+                    amount: 0, // No budget
+                    actual: otherActual
+                });
+            }
+            
             state.budgetedSurplus = state.totalBudgetIncome - state.totalBudgetExpense;
             state.actualSurplus = state.totalActualIncome - state.totalActualExpense;
 
@@ -1155,7 +1356,7 @@
             ui.totalBudgetExpense.textContent = formatCurrency(state.totalBudgetExpense);
             ui.totalActualExpense.textContent = formatCurrency(state.totalActualExpense); // Show the true total
             ui.totalExpenseSelisih.innerHTML = formatSelisih(state.totalActualExpense, state.totalBudgetExpense, 'expense');
-            renderBudgetList(ui.fixedSpendingList, state.expenseBudgets);
+            renderBudgetList(ui.fixedSpendingList, state.expenseBudgets.filter(b => !(b.id === 'other' && b.amount === 0 && b.actual === 0))); // Don't show 'Other' if it's empty
             
             // 4. Update DOM - Dashboard
             ui.budgetedSurplus.textContent = formatCurrency(state.budgetedSurplus);
@@ -1192,6 +1393,7 @@
                 const isInsideModal = el.closest('#firebaseConfigModal') || 
                                       el.closest('#actualIncomeModal') || 
                                       el.closest('#importModal') ||
+                                      el.closest('#pastExpenseModal') || // (NEW) Add new modal
                                       el.closest('#errorModal'); // (NEW) Don't disable error modal button
                 
                 // If it's inside a modal, it should always be enabled
@@ -1262,7 +1464,13 @@
                 listElement.innerHTML = `<p class="text-gray-500 text-center">No budget categories added yet.</p>`;
                 return;
             }
-            items.forEach(item => {
+            
+            // (NEW) Filter out 'Other' if it's not a real budget item and has no actuals
+             const itemsToShow = items.filter(item => {
+                return !(item.id === 'other' && item.amount === 0 && item.actual === 0);
+            });
+            
+            itemsToShow.forEach(item => {
                 const li = document.createElement('li');
                 li.className = 'p-3 bg-gray-50 rounded-lg shadow-sm';
                 
@@ -1273,17 +1481,21 @@
                 // Only show advice if it's positive and for the current month
                 const showAdvice = (dailyAdvice > 0 && item.amount > 0 && state.selectedMonth === currentMonthId);
 
+                // Don't allow editing/deleting the 'Other (Unbudgeted)' item
+                const editDeleteButtons = (item.id !== 'other') ? `
+                    <div class="flex space-x-2">
+                        <button data-id="${item.id}" class="edit-btn text-blue-500 hover:text-blue-700 p-1 rounded-full">
+                            <ion-icon name="create-outline" class="text-xl pointer-events-none"></ion-inject>
+                        </button>
+                        <button data-id="${item.id}" class="delete-btn text-red-500 hover:text-red-700 p-1 rounded-full">
+                            <ion-icon name="trash-outline" class="text-xl pointer-events-none"></ion-inject>
+                        </button>
+                    </div>` : '';
+
                 li.innerHTML = `
                     <div class="flex justify-between items-center mb-2">
                         <span class="font-medium text-gray-800">${item.name}</span>
-                        <div class="flex space-x-2">
-                            <button data-id="${item.id}" class="edit-btn text-blue-500 hover:text-blue-700 p-1 rounded-full">
-                                <ion-icon name="create-outline" class="text-xl pointer-events-none"></ion-inject>
-                            </button>
-                            <button data-id="${item.id}" class="delete-btn text-red-500 hover:text-red-700 p-1 rounded-full">
-                                <ion-icon name="trash-outline" class="text-xl pointer-events-none"></ion-inject>
-                            </button>
-                        </div>
+                        ${editDeleteButtons}
                     </div>
                     <div class="text-sm space-y-1">
                         <div class="flex justify-between">
@@ -1309,25 +1521,59 @@
             });
         }
         
+        // (FIX 4: REBUILT Expense Log Renderer)
         function renderExpenseLog(listElement, items, emptyMessage) {
             listElement.innerHTML = '';
-            if (items.length === 0) {
-                listElement.innerHTML = `<p class="text-gray-500 text-center">${emptyMessage}</p>`;
+            
+            // 1. Get search term
+            const searchTerm = ui.searchExpenseLog.value.toLowerCase();
+
+            // 2. Map to include category name
+            const itemsWithCategory = items.map(item => {
+                const category = state.expenseBudgets.find(c => c.id === item.categoryId);
+                const categoryName = category ? category.name : (item.categoryId === 'other' ? 'Other (Unbudgeted)' : 'Uncategorized');
+                return { ...item, categoryName };
+            });
+
+            // 3. Filter
+            const filteredItems = searchTerm
+                ? itemsWithCategory.filter(item => 
+                    item.name.toLowerCase().includes(searchTerm) || 
+                    item.categoryName.toLowerCase().includes(searchTerm)
+                  )
+                : itemsWithCategory;
+
+            if (filteredItems.length === 0) {
+                listElement.innerHTML = `<p class="text-gray-500 text-center">${searchTerm ? 'No matching expenses found.' : emptyMessage}</p>`;
                 return;
             }
             
-            const sortedItems = [...items].sort((a, b) => new Date(b.date) - new Date(a.date));
+            // 4. Sort by Category, then by Date
+            const sortedItems = filteredItems.sort((a, b) => {
+                if (a.categoryName < b.categoryName) return -1;
+                if (a.categoryName > b.categoryName) return 1;
+                // If same category, sort by newest first
+                return new Date(b.date) - new Date(a.date);
+            });
 
+            // 5. Render
+            let currentCategory = "";
             sortedItems.forEach(item => {
-                const category = state.expenseBudgets.find(c => c.id === item.categoryId);
-                const categoryName = category ? category.name : (item.categoryId === 'other' ? 'Other' : 'Uncategorized');
+                // Add category header
+                if (item.categoryName !== currentCategory) {
+                    currentCategory = item.categoryName;
+                    const header = document.createElement('h3');
+                    header.className = "font-semibold text-gray-700 mt-4 border-b pb-1";
+                    header.textContent = currentCategory;
+                    listElement.appendChild(header);
+                }
                 
                 const li = document.createElement('li');
                 li.className = 'flex justify-between items-center p-3 bg-gray-50 rounded-lg shadow-sm';
                 li.innerHTML = `
                     <div>
                         <span class="font-medium text-gray-800">${item.name}</span>
-                        <span class="block text-sm text-gray-600">${formatCurrency(item.amount)} <span class="text-xs text-gray-400">(${categoryName})</span></span>
+                        <span class="block text-sm text-gray-600">${formatCurrency(item.amount)}</span>
                     </div>
                     <div class="flex space-x-2">
                         <button data-id="${item.id}" class="edit-btn text-blue-500 hover:text-blue-700 p-1 rounded-full">
@@ -1344,16 +1590,29 @@
         
         function populateCategoryDropdown() {
             ui.expenseCategorySelect.innerHTML = '<option value="">-- Select Category --</option>';
-            state.expenseBudgets.forEach(cat => {
-                // Don't include the 'surplus/deficit' item as a selectable category
+            
+            // (NEW) Filter out 'Other' if it's a temporary item
+            const categories = state.expenseBudgets.filter(cat => {
+                // Don't include the 'surplus/deficit' item
                 if (cat.name.toLowerCase().includes("sisa dana") || cat.name.toLowerCase().includes("defisit")) {
-                    return;
+                    return false;
                 }
+                // Don't include the temporary 'Other' item
+                if (cat.id === 'other' && cat.amount === 0) {
+                    return false;
+                }
+                return true;
+            });
+            
+            categories.sort((a,b) => a.name.localeCompare(b.name)); // Sort alphabetically
+            
+            categories.forEach(cat => {
                 const option = document.createElement('option');
                 option.value = cat.id;
                 option.textContent = cat.name;
                 ui.expenseCategorySelect.appendChild(option);
             });
+            
             ui.expenseCategorySelect.innerHTML += '<option value="other">Other (Unbudgeted)</option>';
         }
 
@@ -1369,7 +1628,8 @@
 
             const fullState = {
                 incomeItems: state.incomeItems,
-                expenseBudgets: state.expenseBudgets,
+                // (NEW) Filter out the temporary 'Other' category before saving
+                expenseBudgets: state.expenseBudgets.filter(b => b.id !== 'other' || b.amount > 0),
                 expenseLog: state.expenseLog
             };
             
@@ -1510,6 +1770,9 @@
             else if (type === 'fixed') stateArrayKey = 'expenseBudgets';
             else if (type === 'expenseLog') stateArrayKey = 'expenseLog';
             else return;
+            
+            // (NEW) Don't delete the special 'other' category
+            if (id === 'other') return;
 
             // (NEW) No status update here
             state[stateArrayKey] = state[stateArrayKey].filter(item => item.id !== id);
