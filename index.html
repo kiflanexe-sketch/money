@@ -424,6 +424,7 @@
         
         // Save Status Timer
         let saveTimeout;
+        let isSaving = false; // (NEW) Flag to prevent race conditions
 
         // --- App State ---
         const state = {
@@ -571,7 +572,7 @@
             return prevDate.toISOString().slice(0, 7);
         }
 
-        // --- Save Status Handler ---
+        // --- (NEW) Save Status Handler ---
         function updateSaveStatus(status, message) {
             if (saveTimeout) clearTimeout(saveTimeout);
             
@@ -579,28 +580,35 @@
             bar.classList.remove('hidden', 'status-unsaved', 'status-saving', 'status-saved', 'status-error');
             
             switch(status) {
-                case 'unsaved':
+                case 'unsaved': // This status is no longer used, but kept for logic
                     bar.classList.add('status-unsaved');
                     bar.textContent = message || "Unsaved changes...";
                     break;
                 case 'saving':
+                    isSaving = true; // (NEW)
                     bar.classList.add('status-saving');
                     bar.textContent = message || "Saving...";
                     break;
                 case 'saved':
+                    isSaving = false; // (NEW)
                     bar.classList.add('status-saved');
                     bar.textContent = message || "All changes saved.";
                     // Hide after a delay
                     saveTimeout = setTimeout(() => {
-                        bar.classList.add('hidden');
+                        // Only hide if we are still 'saved' and not saving again
+                        if (!isSaving) {
+                           bar.classList.add('hidden');
+                        }
                     }, 2000); // Hide after 2 seconds
                     break;
                 case 'error':
+                    isSaving = false; // (NEW)
                     bar.classList.add('status-error');
                     bar.textContent = message || "Error: Failed to save.";
                     // Don't hide error
                     break;
                 case 'hidden':
+                    isSaving = false; // (NEW)
                     bar.classList.add('hidden');
                     break;
             }
@@ -883,6 +891,7 @@
             await loadData();
         }
 
+        // --- (NEW) REBUILT loadData() function ---
         async function loadData() {
             if (!isAuthReady || !userId || !state.selectedMonth) {
                 console.warn("loadData called before auth or month selection is ready.");
@@ -900,7 +909,6 @@
 
             ui.loading.classList.remove('hidden');
             ui.appContent.classList.add('hidden');
-            updateSaveStatus('hidden'); // Hide status on load
 
             if (!ui.monthSelector.querySelector(`option[value="${state.selectedMonth}"]`)) {
                 const option = document.createElement('option');
@@ -910,23 +918,28 @@
                 ui.monthSelector.value = state.selectedMonth;
             }
 
-            // (NEW) Add includeMetadataChanges: true
+            // (NEW) This is now the "brain" of the save status
             unsubscribeSnapshot = onSnapshot(docRef, { includeMetadataChanges: true }, (docSnap) => {
                 ui.loading.classList.add('hidden');
                 ui.appContent.classList.remove('hidden');
                 
-                // (NEW) Check if data is from server or local cache
                 const source = docSnap.metadata.fromCache ? "local cache" : "server";
-                console.log(`Data loaded from ${source}.`);
+                console.log(`Snapshot received from ${source}. Pending writes: ${docSnap.metadata.hasPendingWrites}`);
+                
+                // (NEW) Update Save Status based on snapshot metadata
+                if (docSnap.metadata.hasPendingWrites) {
+                    updateSaveStatus('saving', 'Syncing changes...');
+                } else {
+                    updateSaveStatus('saved', 'All changes synced.');
+                }
                 
                 if (docSnap.exists()) {
-                    // console.log("Data loaded:", docSnap.data()); // Too noisy
                     const data = docSnap.data();
                     state.incomeItems = data.incomeItems || [];
                     state.expenseBudgets = data.expenseBudgets || data.fixedSpendingItems || []; 
                     state.expenseLog = data.expenseLog || data.dynamicExpenses || []; 
                 } else {
-                    console.log("No such document! Initializing empty state for this month.");
+                    console.log("No document for this month.");
                     state.incomeItems = [];
                     state.expenseBudgets = [];
                     state.expenseLog = [];
@@ -1035,7 +1048,7 @@
         }
 
         function confirmImport() {
-            updateSaveStatus('unsaved'); // (NEW)
+            // updateSaveStatus('unsaved'); // (NEW) This is no longer needed
             const newIncomeItems = [];
             const newExpenseBudgets = [];
 
@@ -1307,14 +1320,15 @@
             ui.expenseCategorySelect.innerHTML += '<option value="other">Other (Unbudgeted)</option>';
         }
 
-        // --- (FIX #2) MODIFIED Save Data (non-blocking) ---
-        function saveData() { // No longer needs to be async
+        // --- (NEW) REBUILT Save Data (non-blocking) ---
+        function saveData() { 
             if (!docRef) {
                 console.error("docRef is not initialized. Cannot save.");
                 return;
             }
 
-            updateSaveStatus('saving');
+            // (NEW) Don't update status here. The snapshot listener will.
+            // updateSaveStatus('saving'); 
 
             const fullState = {
                 incomeItems: state.incomeItems,
@@ -1322,12 +1336,13 @@
                 expenseLog: state.expenseLog
             };
             
-            // (FIX #2) Do NOT await. Let it run in the background.
-            // This is "fire-and-forget".
+            // This is "fire-and-forget" to the local cache.
+            // The onSnapshot listener will catch the "pending write"
+            // and update the status to "Saving..."
             setDoc(docRef, fullState, { merge: false })
                 .then(() => {
-                    console.log("Data save confirmed (local or cloud):");
-                    updateSaveStatus('saved');
+                    // This now confirms write *to the server*
+                    console.log("Data successfully synced to server.");
                     // We can re-fetch the graph *after* save is confirmed
                     fetchAndRenderHistoryGraph(); 
                 })
@@ -1337,12 +1352,9 @@
                     updateSaveStatus('error', errorMessage);
                     alert(errorMessage + "\n\nPlease check your internet connection or Firebase permissions. Your last change was NOT saved.");
                 });
-            
-            // We no longer call fetchAndRenderHistoryGraph here
-            // because saveData returns instantly. We moved it to the .then() block.
         }
 
-        // --- (FIX #1) Item Management Functions (Optimistic UI) ---
+        // --- (NEW) REBUILT Item Management Functions (Optimistic UI) ---
 
         function manageIncomeItem() {
             const name = ui.incomeItemName.value.trim();
@@ -1352,7 +1364,7 @@
                 return;
             }
 
-            updateSaveStatus('unsaved'); // (NEW)
+            // (NEW) No status update here
             if (state.editingIncomeId) {
                 state.incomeItems = state.incomeItems.map(item => 
                     item.id === state.editingIncomeId ? { ...item, name, amount } : item
@@ -1362,8 +1374,8 @@
                 state.incomeItems.push(newItem);
             }
             
-            updateUI(); // <-- (FIX #1) OPTIMISTIC UI UPDATE
-            saveData(); // (FIX #2) This is now non-blocking
+            updateUI(); // <-- (FIX 1) OPTIMISTIC UI UPDATE
+            saveData(); // (FIX 2) This is now non-blocking
             cancelEdit('income');
         }
         
@@ -1389,10 +1401,10 @@
             
             const item = state.incomeItems.find(i => i.id === id);
             if (item) {
-                updateSaveStatus('unsaved'); // (NEW)
+                // (NEW) No status update here
                 item.actual = amount;
-                updateUI(); // <-- (FIX #1) OPTIMISTIC UI UPDATE
-                saveData(); // (FIX #2) This is now non-blocking
+                updateUI(); // <-- (FIX 1) OPTIMISTIC UI UPDATE
+                saveData(); // (FIX 2) This is now non-blocking
             }
             ui.actualIncomeModal.classList.add('hidden');
         }
@@ -1405,7 +1417,7 @@
                 return;
             }
 
-            updateSaveStatus('unsaved'); // (NEW)
+            // (NEW) No status update here
             if (state.editingFixedId) {
                 state.expenseBudgets = state.expenseBudgets.map(item => 
                     item.id === state.editingFixedId ? { ...item, name, amount } : item
@@ -1415,8 +1427,8 @@
                 state.expenseBudgets.push(newItem);
             }
             
-            updateUI(); // <-- (FIX #1) OPTIMISTIC UI UPDATE
-            saveData(); // (FIX #2) This is now non-blocking
+            updateUI(); // <-- (FIX 1) OPTIMISTIC UI UPDATE
+            saveData(); // (FIX 2) This is now non-blocking
             cancelEdit('fixed');
         }
 
@@ -1434,7 +1446,7 @@
                 return;
             }
 
-            updateSaveStatus('unsaved'); // (NEW)
+            // (NEW) No status update here
             if (state.editingDynamicId) {
                 state.expenseLog = state.expenseLog.map(item => 
                     item.id === state.editingDynamicId ? { ...item, categoryId, name, amount } : item
@@ -1444,9 +1456,8 @@
                 state.expenseLog.push(newItem);
             }
             
-            // recalculateBudgetActuals(); // This is called by updateUI()
-            updateUI(); // <-- (FIX #1) OPTIMISTIC UI UPDATE
-            saveData(); // (FIX #2) This is now non-blocking
+            updateUI(); // <-- (FIX 1) OPTIMISTIC UI UPDATE
+            saveData(); // (FIX 2) This is now non-blocking
             cancelEdit('dynamic');
         }
 
@@ -1457,15 +1468,11 @@
             else if (type === 'expenseLog') stateArrayKey = 'expenseLog';
             else return;
 
-            updateSaveStatus('unsaved'); // (NEW)
+            // (NEW) No status update here
             state[stateArrayKey] = state[stateArrayKey].filter(item => item.id !== id);
             
-            // if (type === 'expenseLog') {
-            //     recalculateBudgetActuals(); // This is called by updateUI()
-            // }
-            
-            updateUI(); // <-- (FIX #1) OPTIMISTIC UI UPDATE
-            saveData(); // (FIX #2) This is now non-blocking
+            updateUI(); // <-- (FIX 1) OPTIMISTIC UI UPDATE
+            saveData(); // (FIX 2) This is now non-blocking
         }
 
         async function deleteAllItems(key) {
@@ -1475,15 +1482,11 @@
             else if (key === 'expenseLog') stateArrayKey = 'expenseLog';
             else return;
 
-            updateSaveStatus('unsaved'); // (NEW)
+            // (NEW) No status update here
             state[stateArrayKey] = [];
             
-            // if (key === 'expenseLog') {
-            //     state.expenseBudgets.forEach(item => item.actual = 0); // This is handled by recalculateBudgetActuals()
-            // }
-            
-            updateUI(); // <-- (FIX #1) OPTIMISTIC UI UPDATE
-            saveData(); // (FIX #2) This is now non-blocking
+            updateUI(); // <-- (FIX 1) OPTIMISTIC UI UPDATE
+            saveData(); // (FIX 2) This is now non-blocking
         }
 
         // --- startEdit and cancelEdit functions remain the same ---
